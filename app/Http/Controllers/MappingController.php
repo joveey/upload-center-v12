@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Imports\DataImporter;
 use App\Models\MappingColumn;
 use App\Models\MappingIndex;
 use Illuminate\Http\RedirectResponse;
@@ -9,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
@@ -81,7 +83,6 @@ class MappingController extends Controller
      */
     public function storeMapping(Request $request): RedirectResponse
     {
-        // 1a. Mengambil kembali data dari Session.
         $request->validate(['mappings' => 'required|array']);
         $mappingData = $request->session()->get('mapping_data');
         $user = auth()->user();
@@ -90,18 +91,14 @@ class MappingController extends Controller
             return redirect()->route('mapping.register.form')->withErrors(['session' => 'Sesi tidak valid atau Anda tidak terdaftar di divisi manapun.']);
         }
 
-        // Menggunakan DB Transaction untuk memastikan semua data tersimpan atau tidak sama sekali.
         DB::transaction(function () use ($request, $mappingData, $user) {
-            // 1b. Membuat satu entri baru di tabel `mapping_indices`.
             $mappingIndex = MappingIndex::create([
-                'division_id' => $user->division_id, // Mengambil division_id dari user
-                'name' => $mappingData['name'], // Deskripsi format
-                'original_headers' => $mappingData['excel_headers'], // Menyimpan header asli
+                'division_id' => $user->division_id,
+                'name' => $mappingData['name'],
+                'original_headers' => $mappingData['excel_headers'],
             ]);
 
-            // 1c. Melakukan perulangan pada input dari form mapping.
             foreach ($request->input('mappings') as $excelHeader => $dbColumn) {
-                // Hanya simpan jika value tidak kosong
                 if (!empty($dbColumn)) {
                     MappingColumn::create([
                         'mapping_index_id' => $mappingIndex->id,
@@ -112,11 +109,48 @@ class MappingController extends Controller
             }
         });
 
-        // 1d. Menghapus data dari Session dan file temporer setelah berhasil.
         $request->session()->forget('mapping_data');
         Storage::delete($mappingData['file_path']);
 
-        // 1e. Redirect ke halaman dashboard (standar Breeze) dengan pesan sukses.
         return redirect()->route('dashboard')->with('success', 'Aturan mapping baru berhasil disimpan!');
+    }
+
+    /**
+     * Memproses file yang diunggah menggunakan format yang sudah ada.
+     */
+    public function uploadData(Request $request): RedirectResponse
+    {
+        // a. Validasi request
+        $validated = $request->validate([
+            'data_file' => ['required', File::types(['xlsx', 'xls'])],
+            'mapping_id' => [
+                'required',
+                'integer',
+                // Pastikan mapping_id yang dipilih ada dan dimiliki oleh divisi pengguna
+                Rule::exists('mapping_indices', 'id')->where(function ($query) {
+                    $query->where('division_id', auth()->user()->division_id);
+                }),
+            ],
+        ]);
+
+        // b. Ambil aturan mapping dari database
+        $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
+
+        // c. Ubah koleksi 'columns' menjadi array 'mappingRules' yang sederhana
+        $mappingRules = $mapping->columns->pluck('database_column', 'excel_column')->toArray();
+
+        try {
+            // d. Instansiasi DataImporter dengan aturan yang relevan
+            $importer = new DataImporter($mappingRules);
+
+            // e. Jalankan proses impor
+            Excel::import($importer, $request->file('data_file'));
+
+        } catch (\Exception $e) {
+            return redirect()->route('dashboard')->withErrors(['import_error' => 'Terjadi error saat impor: ' . $e->getMessage()]);
+        }
+
+        // f. Redirect kembali dengan pesan sukses
+        return redirect()->route('dashboard')->with('success', 'Data dari file berhasil diimpor!');
     }
 }
