@@ -81,28 +81,27 @@ class MappingController extends Controller
      */
     public function storeMapping(Request $request): RedirectResponse
     {
-        // 1. Validasi input dan ambil data dari session
+        // 1a. Mengambil kembali data dari Session.
         $request->validate(['mappings' => 'required|array']);
         $mappingData = $request->session()->get('mapping_data');
         $user = auth()->user();
 
-        // Redirect jika session hilang atau pengguna tidak punya divisi
         if (!$mappingData || !$user->division_id) {
             return redirect()->route('mapping.register.form')->withErrors(['session' => 'Sesi tidak valid atau Anda tidak terdaftar di divisi manapun.']);
         }
 
-        // 2. Gunakan Database Transaction
+        // Menggunakan DB Transaction untuk memastikan semua data tersimpan atau tidak sama sekali.
         DB::transaction(function () use ($request, $mappingData, $user) {
-            // 2a. Buat record induk di tabel `mapping_indices`
+            // 1b. Membuat satu entri baru di tabel `mapping_indices`.
             $mappingIndex = MappingIndex::create([
-                'division_id' => $user->division_id,
-                'name' => $mappingData['name'],
-                'original_headers' => $mappingData['excel_headers'],
+                'division_id' => $user->division_id, // Mengambil division_id dari user
+                'name' => $mappingData['name'], // Deskripsi format
+                'original_headers' => $mappingData['excel_headers'], // Menyimpan header asli
             ]);
 
-            // 2b. Loop dan simpan setiap pemetaan kolom
+            // 1c. Melakukan perulangan pada input dari form mapping.
             foreach ($request->input('mappings') as $excelHeader => $dbColumn) {
-                // Hanya simpan jika pengguna memilih kolom database (bukan '-- Jangan Simpan --')
+                // Hanya simpan jika value tidak kosong
                 if (!empty($dbColumn)) {
                     MappingColumn::create([
                         'mapping_index_id' => $mappingIndex->id,
@@ -113,11 +112,11 @@ class MappingController extends Controller
             }
         });
 
-        // 3. Bersihkan session dan file temporer
+        // 1d. Menghapus data dari Session dan file temporer setelah berhasil.
         $request->session()->forget('mapping_data');
         Storage::delete($mappingData['file_path']);
 
-        // 4. Redirect dengan pesan sukses
+        // 1e. Redirect ke halaman dashboard (standar Breeze) dengan pesan sukses.
         return redirect()->route('dashboard')->with('success', 'Aturan mapping baru berhasil disimpan!');
     }
 }
