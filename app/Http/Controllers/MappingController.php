@@ -15,6 +15,7 @@ use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
 use Maatwebsite\Excel\Imports\HeadingRowImport;
+use Maatwebsite\Excel\Validators\ValidationException;
 
 class MappingController extends Controller
 {
@@ -120,37 +121,37 @@ class MappingController extends Controller
      */
     public function uploadData(Request $request): RedirectResponse
     {
-        // a. Validasi request
         $validated = $request->validate([
             'data_file' => ['required', File::types(['xlsx', 'xls'])],
             'mapping_id' => [
-                'required',
-                'integer',
-                // Pastikan mapping_id yang dipilih ada dan dimiliki oleh divisi pengguna
-                Rule::exists('mapping_indices', 'id')->where(function ($query) {
-                    $query->where('division_id', auth()->user()->division_id);
-                }),
+                'required', 'integer',
+                Rule::exists('mapping_indices', 'id')->where('division_id', auth()->user()->division_id),
             ],
         ]);
 
-        // b. Ambil aturan mapping dari database
         $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
-
-        // c. Ubah koleksi 'columns' menjadi array 'mappingRules' yang sederhana
         $mappingRules = $mapping->columns->pluck('database_column', 'excel_column')->toArray();
 
         try {
-            // d. Instansiasi DataImporter dengan aturan yang relevan
             $importer = new DataImporter($mappingRules);
-
-            // e. Jalankan proses impor
             Excel::import($importer, $request->file('data_file'));
 
-        } catch (\Exception $e) {
-            return redirect()->route('dashboard')->withErrors(['import_error' => 'Terjadi error saat impor: ' . $e->getMessage()]);
-        }
+            $successMessage = 'Data dari file berhasil diimpor!';
+            // Jika ada baris yang dilewati, tambahkan informasi ke pesan sukses
+            if ($importer->getFailures()->isNotEmpty()) {
+                $successMessage .= ' Namun, ' . $importer->getFailures()->count() . ' baris data terdeteksi tidak valid dan dilewati.';
+            }
+            return redirect()->route('dashboard')->with('success', $successMessage);
 
-        // f. Redirect kembali dengan pesan sukses
-        return redirect()->route('dashboard')->with('success', 'Data dari file berhasil diimpor!');
+        } catch (ValidationException $e) {
+            // Tangkap error validasi spesifik dari Maatwebsite/Excel
+            $failures = $e->failures(); // Dapatkan detail baris mana yang error dan kenapa
+            // Kita bisa teruskan $failures ini ke view jika ingin menampilkannya secara detail
+            return redirect()->route('dashboard')->withErrors(['import_error' => 'Validasi data gagal pada beberapa baris. Tidak ada data yang diimpor.']);
+        
+        } catch (\Exception $e) {
+            // Tangkap error umum lainnya (file rusak, dll)
+            return redirect()->route('dashboard')->withErrors(['import_error' => 'Gagal mengimpor file. Pastikan format file sesuai dengan aturan yang dipilih dan tidak rusak.']);
+        }
     }
 }
