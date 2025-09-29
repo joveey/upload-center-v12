@@ -7,6 +7,7 @@ use App\Models\MappingColumn;
 use App\Models\MappingIndex;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -14,7 +15,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
-use Maatwebsite\Excel\Imports\HeadingRowImport;
+use Maatwebsite\Excel\HeadingRowImport;
 use Maatwebsite\Excel\Validators\ValidationException;
 
 class MappingController extends Controller
@@ -86,9 +87,9 @@ class MappingController extends Controller
     {
         $request->validate(['mappings' => 'required|array']);
         $mappingData = $request->session()->get('mapping_data');
-        $user = auth()->user();
+        $user = Auth::user();
 
-        if (!$mappingData || !$user->division_id) {
+        if (!$mappingData || !$user || !$user->division_id) {
             return redirect()->route('mapping.register.form')->withErrors(['session' => 'Sesi tidak valid atau Anda tidak terdaftar di divisi manapun.']);
         }
 
@@ -121,11 +122,17 @@ class MappingController extends Controller
      */
     public function uploadData(Request $request): RedirectResponse
     {
+        $user = Auth::user();
+        
+        if (!$user || !$user->division_id) {
+            return redirect()->route('dashboard')->withErrors(['upload_error' => 'Anda tidak terdaftar di divisi manapun.']);
+        }
+
         $validated = $request->validate([
             'data_file' => ['required', File::types(['xlsx', 'xls'])],
             'mapping_id' => [
                 'required', 'integer',
-                Rule::exists('mapping_indices', 'id')->where('division_id', auth()->user()->division_id),
+                Rule::exists('mapping_indices', 'id')->where('division_id', $user->division_id),
             ],
         ]);
 
@@ -138,8 +145,9 @@ class MappingController extends Controller
 
             $successMessage = 'Data dari file berhasil diimpor!';
             // Jika ada baris yang dilewati, tambahkan informasi ke pesan sukses
-            if ($importer->getFailures()->isNotEmpty()) {
-                $successMessage .= ' Namun, ' . $importer->getFailures()->count() . ' baris data terdeteksi tidak valid dan dilewati.';
+            $failures = $importer->failures();
+            if (!empty($failures)) {
+                $successMessage .= ' Namun, ' . count($failures) . ' baris data terdeteksi tidak valid dan dilewati.';
             }
             return redirect()->route('dashboard')->with('success', $successMessage);
 

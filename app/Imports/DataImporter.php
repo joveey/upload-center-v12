@@ -3,17 +3,16 @@
 namespace App\Imports;
 
 use App\Models\SpotifyUser;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Concerns\ToModel;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\WithValidation;
 use Maatwebsite\Excel\Concerns\SkipsOnFailure;
-use Maatwebsite\Excel\Validators\Failure;
 use Maatwebsite\Excel\Concerns\SkipsFailures;
 
 class DataImporter implements ToModel, WithHeadingRow, WithValidation, SkipsOnFailure
 {
-    use SkipsFailures; // <-- Gunakan trait ini untuk menangani kegagalan
+    use SkipsFailures;
 
     protected array $mappingRules;
 
@@ -22,13 +21,18 @@ class DataImporter implements ToModel, WithHeadingRow, WithValidation, SkipsOnFa
         $this->mappingRules = $mappingRules;
     }
 
-    public function model(array $row): ?Model
+    /**
+     * Transform each row into a SpotifyUser model
+     */
+    public function model(array $row): ?SpotifyUser
     {
-        $dataForModel = ['division_id' => auth()->user()->division_id];
+        $user = Auth::user();
+        $dataForModel = ['division_id' => $user ? $user->division_id : null];
 
         foreach ($this->mappingRules as $excelColumn => $dbColumn) {
-            if (isset($row[strtolower(str_replace(' ', '_', $excelColumn))])) {
-                $dataForModel[$dbColumn] = $row[strtolower(str_replace(' ', '_', $excelColumn)))];
+            $normalizedKey = strtolower(str_replace(' ', '_', $excelColumn));
+            if (isset($row[$normalizedKey])) {
+                $dataForModel[$dbColumn] = $row[$normalizedKey];
             }
         }
 
@@ -46,17 +50,39 @@ class DataImporter implements ToModel, WithHeadingRow, WithValidation, SkipsOnFa
 
         // Aturan validasi dinamis berdasarkan kolom database
         if (isset($dbToExcelMap['email'])) {
-            $rules[$dbToExcelMap['email']] = 'required|email';
+            $normalizedKey = strtolower(str_replace(' ', '_', $dbToExcelMap['email']));
+            $rules[$normalizedKey] = 'required|email';
         }
+        
         if (isset($dbToExcelMap['followers'])) {
-            $rules[$dbToExcelMap['followers']] = 'required|integer|min:0';
+            $normalizedKey = strtolower(str_replace(' ', '_', $dbToExcelMap['followers']));
+            $rules[$normalizedKey] = 'required|integer|min:0';
         }
+        
         if (isset($dbToExcelMap['user_id'])) {
             // Pastikan user_id unik untuk divisi yang sama
-            $divisionId = auth()->user()->division_id;
-            $rules[$dbToExcelMap['user_id']] = "required|unique:spotify_users,user_id,NULL,id,division_id,$divisionId";
+            $user = Auth::user();
+            $divisionId = $user ? $user->division_id : null;
+            $normalizedKey = strtolower(str_replace(' ', '_', $dbToExcelMap['user_id']));
+            $rules[$normalizedKey] = "required|unique:spotify_users,user_id,NULL,id,division_id,{$divisionId}";
         }
 
         return $rules;
+    }
+
+    /**
+     * Custom attribute names for validation error messages
+     */
+    public function customValidationAttributes(): array
+    {
+        $attributes = [];
+        $dbToExcelMap = array_flip($this->mappingRules);
+
+        foreach ($dbToExcelMap as $dbColumn => $excelColumn) {
+            $normalizedKey = strtolower(str_replace(' ', '_', $excelColumn));
+            $attributes[$normalizedKey] = $excelColumn;
+        }
+
+        return $attributes;
     }
 }
