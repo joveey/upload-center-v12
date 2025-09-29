@@ -13,7 +13,13 @@ return new class extends Migration
     {
         Schema::create('mapping_columns', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('mapping_index_id')->constrained('mapping_indices')->cascadeOnDelete();
+            $table->string('excel_column');
+            $table->string('database_column');
             $table->timestamps();
+
+            // A single mapping rule cannot map the same Excel column twice.
+            $table->unique(['mapping_index_id', 'excel_column']);
         });
     }
 

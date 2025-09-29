@@ -13,6 +13,9 @@ return new class extends Migration
     {
         Schema::create('mapping_indices', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('division_id')->constrained('divisions')->cascadeOnDelete();
+            $table->string('name');
+            $table->json('original_headers')->comment('Stores the exact header row from the first uploaded file as a JSON array');
             $table->timestamps();
         });
     }

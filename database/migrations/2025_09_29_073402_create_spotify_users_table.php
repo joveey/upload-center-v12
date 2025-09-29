@@ -13,6 +13,12 @@ return new class extends Migration
     {
         Schema::create('spotify_users', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('division_id')->constrained('divisions')->cascadeOnDelete();
+            $table->string('user_id');
+            $table->string('display_name');
+            $table->string('email');
+            $table->string('country');
+            $table->integer('followers')->default(0);
             $table->timestamps();
         });
     }
