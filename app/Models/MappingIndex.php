@@ -13,18 +13,10 @@ class MappingIndex extends Model
 
     protected $fillable = [
         'division_id',
-        'name',
-        'original_headers',
-        'destination_table',
-    ];
-
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array
-     */
-    protected $casts = [
-        'original_headers' => 'array',
+        'code',           // SESUAIKAN dengan database
+        'description',    // SESUAIKAN dengan database
+        'table_name',
+        'header_row',
     ];
 
     /**
