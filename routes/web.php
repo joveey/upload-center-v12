@@ -1,9 +1,8 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\MappingController; // Pastikan ini ada
+use App\Http\Controllers\MappingController;
 use App\Http\Controllers\ProfileController;
-// use App\Http\Controllers\UploadController; // Hapus atau komentari baris ini karena sudah tidak dipakai
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -39,10 +38,16 @@ Route::middleware('auth')->group(function () {
     |--------------------------------------------------------------------------
     */
 
-    // Alur Cepat -> Memproses unggahan data menggunakan format yang ada
+    // Alur Cepat -> Memproses unggahan data setelah diseleksi di modal
     Route::post('/upload', [MappingController::class, 'uploadData'])
         ->middleware('can:upload data')
         ->name('upload.process');
+
+    // [BARU] Route untuk mengambil konten pratinjau untuk ditampilkan di modal
+    Route::post('/upload-preview', [MappingController::class, 'showUploadPreview'])
+        ->middleware('can:upload data')
+        ->name('upload.preview');
+
 
     // Alur Cerdas -> Mendaftarkan format laporan baru
     Route::middleware('can:register format')->group(function () {
@@ -50,11 +55,12 @@ Route::middleware('auth')->group(function () {
         Route::post('/register-format', [MappingController::class, 'processRegisterForm'])->name('mapping.register.process');
         Route::get('/register-format/map', [MappingController::class, 'showMapForm'])->name('mapping.map.form');
         Route::post('/register-format/map', [MappingController::class, 'storeMapping'])->name('mapping.map.store');
+        
+        // Route ini dari alur registrasi asli, untuk menampilkan pratinjau saat membuat format
+        // Kita biarkan saja untuk menjaga fungsionalitas asli
         Route::post('/register-format/preview', [MappingController::class, 'previewUpload'])->name('mapping.preview');
     });
 });
-
-    
 
 // Memuat rute-rute autentikasi bawaan Breeze (login, register, dll.)
 require __DIR__.'/auth.php';

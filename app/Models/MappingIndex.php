@@ -15,6 +15,7 @@ class MappingIndex extends Model
         'division_id',
         'name',
         'original_headers',
+        'destination_table',
     ];
 
     /**

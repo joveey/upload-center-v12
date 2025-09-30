@@ -2,10 +2,10 @@
 
 namespace Database\Seeders;
 
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
-use Spatie\Permission\PermissionRegistrar;
 
 class RolesAndPermissionsSeeder extends Seeder
 {
@@ -15,7 +15,7 @@ class RolesAndPermissionsSeeder extends Seeder
     public function run(): void
     {
         // Reset cached roles and permissions
-        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
         // create permissions
         Permission::create(['name' => 'register format']);
@@ -26,8 +26,8 @@ class RolesAndPermissionsSeeder extends Seeder
         $divisionUserRole->givePermissionTo('register format');
         $divisionUserRole->givePermissionTo('upload data');
 
-        // Super-Admin gets all permissions implicitly by Gate::before rule
-        // see AuthServiceProvider
-        Role::create(['name' => 'super-admin']);
+        // [PERBAIKAN] Menghapus 's' dari 'name's'
+        $superAdminRole = Role::create(['name' => 'super-admin']);
+        $superAdminRole->givePermissionTo(Permission::all());
     }
 }

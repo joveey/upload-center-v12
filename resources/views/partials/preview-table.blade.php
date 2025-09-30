@@ -1,5 +1,6 @@
 <div class="border border-gray-200 rounded-lg overflow-hidden">
     <table class="min-w-full divide-y divide-gray-200">
+        {{-- Tabel ini tidak lagi memerlukan $excelHeaders karena tidak ada judul --}}
         <tbody class="bg-white divide-y divide-gray-200">
             @forelse($rows as $index => $row)
                 {{-- Baris ini bisa diklik dan akan mengirim nomor barisnya (index + 1) --}}

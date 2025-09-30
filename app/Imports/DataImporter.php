@@ -3,86 +3,58 @@
 namespace App\Imports;
 
 use App\Models\SpotifyUser;
-use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Concerns\ToModel;
-use Maatwebsite\Excel\Concerns\WithHeadingRow;
+use Maatwebsite\Excel\Concerns\WithStartRow;
 use Maatwebsite\Excel\Concerns\WithValidation;
+use Maatwebsite\Excel\Validators\Failure;
 use Maatwebsite\Excel\Concerns\SkipsOnFailure;
-use Maatwebsite\Excel\Concerns\SkipsFailures;
 
-class DataImporter implements ToModel, WithHeadingRow, WithValidation, SkipsOnFailure
+class DataImporter implements ToModel, WithStartRow, WithValidation, SkipsOnFailure
 {
-    use SkipsFailures;
+    protected array $mapping;
+    protected int $headerRow;
+    protected $failures = [];
 
-    protected array $mappingRules;
-
-    public function __construct(array $mappingRules)
+    public function __construct(array $mapping, int $headerRow)
     {
-        $this->mappingRules = $mappingRules;
+        $this->mapping = $mapping;
+        $this->headerRow = $headerRow;
     }
 
-    /**
-     * Transform each row into a SpotifyUser model
-     */
-    public function model(array $row): ?SpotifyUser
+    public function model(array $row): SpotifyUser
     {
-        $user = Auth::user();
-        $dataForModel = ['division_id' => $user ? $user->division_id : null];
-
-        foreach ($this->mappingRules as $excelColumn => $dbColumn) {
-            $normalizedKey = strtolower(str_replace(' ', '_', $excelColumn));
-            if (isset($row[$normalizedKey])) {
-                $dataForModel[$dbColumn] = $row[$normalizedKey];
+        $mappedData = [];
+        foreach ($this->mapping as $excelHeader => $dbColumn) {
+            $excelHeaders = array_keys($row);
+            $key = array_search(strtolower($excelHeader), array_map('strtolower', $excelHeaders));
+            if ($key !== false) {
+                $mappedData[$dbColumn] = $row[$excelHeader];
             }
         }
 
-        return new SpotifyUser($dataForModel);
+        return new SpotifyUser($mappedData);
     }
 
-    /**
-     * Tentukan aturan validasi untuk setiap baris.
-     */
+    public function startRow(): int
+    {
+        return $this->headerRow + 1;
+    }
+
     public function rules(): array
     {
-        $rules = [];
-        // Balikkan mapping untuk mempermudah: ['database_column' => 'excel_header']
-        $dbToExcelMap = array_flip($this->mappingRules);
-
-        // Aturan validasi dinamis berdasarkan kolom database
-        if (isset($dbToExcelMap['email'])) {
-            $normalizedKey = strtolower(str_replace(' ', '_', $dbToExcelMap['email']));
-            $rules[$normalizedKey] = 'required|email';
-        }
-        
-        if (isset($dbToExcelMap['followers'])) {
-            $normalizedKey = strtolower(str_replace(' ', '_', $dbToExcelMap['followers']));
-            $rules[$normalizedKey] = 'required|integer|min:0';
-        }
-        
-        if (isset($dbToExcelMap['user_id'])) {
-            // Pastikan user_id unik untuk divisi yang sama
-            $user = Auth::user();
-            $divisionId = $user ? $user->division_id : null;
-            $normalizedKey = strtolower(str_replace(' ', '_', $dbToExcelMap['user_id']));
-            $rules[$normalizedKey] = "required|unique:spotify_users,user_id,NULL,id,division_id,{$divisionId}";
-        }
-
-        return $rules;
+        return [
+             '*.email' => ['nullable', 'email', 'unique:spotify_users,email'],
+             '*.followers' => ['nullable', 'integer'],
+        ];
+    }
+    
+    public function onFailure(Failure ...$failures)
+    {
+        $this->failures = array_merge($this->failures, $failures);
     }
 
-    /**
-     * Custom attribute names for validation error messages
-     */
-    public function customValidationAttributes(): array
+    public function getFailures()
     {
-        $attributes = [];
-        $dbToExcelMap = array_flip($this->mappingRules);
-
-        foreach ($dbToExcelMap as $dbColumn => $excelColumn) {
-            $normalizedKey = strtolower(str_replace(' ', '_', $excelColumn));
-            $attributes[$normalizedKey] = $excelColumn;
-        }
-
-        return $attributes;
+        return collect($this->failures);
     }
 }
