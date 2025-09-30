@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MappingColumn;
 use App\Models\MappingIndex;
+use App\Models\UploadLog;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -400,7 +401,14 @@ class MappingController extends Controller
 
             // Insert to database
             DB::table($tableName)->insert($dataToInsert);
-            
+            UploadLog::create([
+                'user_id' => Auth::id(),
+                'division_id' => Auth::user()->division_id,
+                'mapping_index_id' => $mapping->id,
+                'file_name' => $request->file('data_file')->getClientOriginalName(),
+                'rows_imported' => count($dataToInsert),
+                'status' => 'success'
+                ]);
             Log::info("=== BERHASIL INSERT " . count($dataToInsert) . " ROWS ===");
 
             return response()->json([
@@ -411,11 +419,22 @@ class MappingController extends Controller
         } catch (\Exception $e) {
             Log::error('Upload error: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal upload data: ' . $e->getMessage()
-            ]);
-        }
+            UploadLog::create([
+                    'user_id' => Auth::id(),
+                    'division_id' => Auth::user()->division_id,
+                    'mapping_index_id' => $mapping->id,
+                    'file_name' => $request->file('data_file')->getClientOriginalName(),
+                    'rows_imported' => 0,
+                    'status' => 'failed',
+                    'error_message' => $e->getMessage()
+                ]);
+                
+                Log::error('Upload error: ' . $e->getMessage());
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal upload data: ' . $e->getMessage()
+                ]);
+            }
     }
 }

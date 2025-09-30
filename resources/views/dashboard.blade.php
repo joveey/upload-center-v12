@@ -11,7 +11,13 @@
                     <h2 class="font-bold text-3xl text-gray-800 leading-tight">
                         {{ __('Dashboard') }}
                     </h2>
-                    <p class="mt-1 text-sm text-gray-600 font-medium">Kelola dan unggah data Excel dengan mudah</p>
+                    <p class="mt-1 text-sm text-gray-600 font-medium">
+                        @if(auth()->user()->division->is_super_user)
+                            Admin Panel - Kelola semua data
+                        @else
+                            Kelola dan unggah data Excel dengan mudah
+                        @endif
+                    </p>
                 </div>
             </div>
             @can('register format')
@@ -68,6 +74,35 @@
                     </div>
                 @endif
             </div>
+
+            {{-- SuperUser Chart --}}
+            @if(auth()->user()->division->is_super_user && isset($uploadStats))
+            <div class="mb-6">
+                <div class="bg-white overflow-hidden shadow-2xl rounded-2xl border border-gray-100">
+                    <div class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-6">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-xl p-3 shadow-lg">
+                                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-xl font-bold text-white">
+                                    Statistik Upload
+                                </h3>
+                                <p class="text-indigo-100 text-sm mt-1">
+                                    Data upload 4 minggu terakhir
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="p-8">
+                        <canvas id="uploadChart" height="80"></canvas>
+                    </div>
+                </div>
+            </div>
+            @endif
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Upload Section -->
@@ -217,6 +252,17 @@
                                             </div>
                                         </div>
                                     </div>
+                                    
+                                    {{-- Download Button --}}
+                                    <div class="mt-3 pt-3 border-t border-purple-200">
+                                        <a href="{{ route('export.data', $mapping->id) }}" 
+                                           class="inline-flex items-center justify-center w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 border border-transparent rounded-lg font-bold text-xs text-white uppercase tracking-wide hover:from-green-700 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-green-300 transition-all duration-200 shadow-sm hover:shadow-md group">
+                                            <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                            </svg>
+                                            Download Excel
+                                        </a>
+                                    </div>
                                 </div>
                             @empty
                                 <div class="text-center py-12">
@@ -287,6 +333,87 @@
     </div>
 
     @push('scripts')
+    {{-- Chart.js untuk SuperUser --}}
+    @if(auth()->user()->division->is_super_user && isset($uploadStats))
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        const ctx = document.getElementById('uploadChart');
+        const uploadData = @json($uploadStats);
+        
+        const colors = [
+            'rgb(99, 102, 241)',   // indigo
+            'rgb(168, 85, 247)',   // purple
+            'rgb(236, 72, 153)',   // pink
+            'rgb(14, 165, 233)',   // sky
+            'rgb(34, 197, 94)',    // green
+            'rgb(251, 146, 60)',   // orange
+        ];
+
+        const datasets = uploadData.datasets.map((dataset, index) => ({
+            label: dataset.label,
+            data: dataset.data,
+            borderColor: colors[index % colors.length],
+            backgroundColor: colors[index % colors.length] + '20',
+            borderWidth: 3,
+            tension: 0.4,
+            fill: true
+        }));
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: uploadData.labels,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            padding: 15,
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        padding: 12,
+                        titleFont: {
+                            size: 14,
+                            weight: 'bold'
+                        },
+                        bodyFont: {
+                            size: 13
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+    @endif
+
     <script>
         let previewData = null;
 

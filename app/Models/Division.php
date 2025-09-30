@@ -1,4 +1,5 @@
 <?php
+// app/Models/Division.php
 
 namespace App\Models;
 
@@ -10,21 +11,32 @@ class Division extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name'];
+    protected $fillable = [
+        'name',
+        'is_super_user',
+    ];
 
-    /**
-     * Get the users for the division.
-     */
+    protected $casts = [
+        'is_super_user' => 'boolean',
+    ];
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
     }
 
-    /**
-     * Get the mapping indices for the division.
-     */
     public function mappingIndices(): HasMany
     {
         return $this->hasMany(MappingIndex::class);
+    }
+
+    public function uploadLogs(): HasMany
+    {
+        return $this->hasMany(UploadLog::class);
+    }
+
+    public function isSuperUser(): bool
+    {
+        return $this->is_super_user === true;
     }
 }
