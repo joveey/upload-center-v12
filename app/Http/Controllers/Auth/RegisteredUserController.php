@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Division;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +20,10 @@ class RegisteredUserController extends Controller
      */
     public function create(): View
     {
-        return view('auth.register');
+        // Get all divisions untuk dropdown
+        $divisions = Division::orderBy('name')->get();
+        
+        return view('auth.register', compact('divisions'));
     }
 
     /**
@@ -32,14 +36,19 @@ class RegisteredUserController extends Controller
         $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
+            'division_id' => ['required', 'exists:divisions,id'], // TAMBAHAN: Validasi division_id
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
+            'division_id' => $request->division_id, // TAMBAHAN: Simpan division_id
             'password' => Hash::make($request->password),
         ]);
+
+        // TAMBAHAN: Assign role default
+        $user->assignRole('division-user');
 
         event(new Registered($user));
 

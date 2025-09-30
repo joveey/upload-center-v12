@@ -154,67 +154,156 @@ class MappingController extends Controller
     /**
      * Generate HTML for preview
      */
+    /**
+ * Generate HTML for interactive preview with checkboxes and dropdowns
+ */
     private function generatePreviewHtml($mapping, $headers, $previewRows, $mappingRules): string
     {
-        $html = '<div class="space-y-4">';
+        $html = '<div class="space-y-6">';
         
         // Info section
-        $html .= '<div class="bg-blue-50 border border-blue-200 rounded p-3">';
-        $html .= '<p class="text-sm"><strong>Format:</strong> ' . htmlspecialchars($mapping->description) . '</p>';
-        $html .= '<p class="text-sm"><strong>Tabel Tujuan:</strong> ' . htmlspecialchars($mapping->table_name) . '</p>';
-        $html .= '<p class="text-sm"><strong>Baris Header:</strong> ' . $mapping->header_row . '</p>';
-        $html .= '</div>';
+        $html .= '<div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">';
+        $html .= '<div class="flex items-start">';
+        $html .= '<svg class="w-5 h-5 text-blue-400 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>';
+        $html .= '<div class="flex-1">';
+        $html .= '<p class="text-sm font-medium text-blue-800">Informasi Format</p>';
+        $html .= '<div class="mt-2 text-sm text-blue-700">';
+        $html .= '<p><strong>Format:</strong> ' . htmlspecialchars($mapping->description) . '</p>';
+        $html .= '<p><strong>Tabel Tujuan:</strong> ' . htmlspecialchars($mapping->table_name) . '</p>';
+        $html .= '<p><strong>Baris Header:</strong> ' . $mapping->header_row . '</p>';
+        $html .= '</div></div></div></div>';
         
-        // Mapping section
-        $html .= '<div>';
-        $html .= '<h4 class="font-medium mb-2">Mapping Kolom:</h4>';
-        $html .= '<div class="grid grid-cols-2 gap-2 text-sm">';
-        foreach ($mappingRules as $rule) {
-            $html .= '<div class="flex items-center space-x-2 bg-gray-50 p-2 rounded">';
-            $html .= '<span class="font-mono bg-yellow-100 px-2 py-1 rounded text-xs">' . htmlspecialchars($rule->excel_column_index) . '</span>';
-            $html .= '<span>→</span>';
-            $html .= '<span class="font-mono bg-green-100 px-2 py-1 rounded text-xs">' . htmlspecialchars($rule->table_column_name) . '</span>';
+        // Mapping Configuration section
+        $html .= '<div class="border rounded-lg overflow-hidden">';
+        $html .= '<div class="bg-gray-50 px-4 py-3 border-b flex items-center justify-between">';
+        $html .= '<h4 class="font-medium text-gray-900">Konfigurasi Mapping Kolom</h4>';
+        $html .= '<label class="inline-flex items-center cursor-pointer">';
+        $html .= '<input type="checkbox" id="selectAllColumns" checked class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">';
+        $html .= '<span class="ml-2 text-sm text-gray-700">Pilih Semua</span>';
+        $html .= '</label></div>';
+        
+        $html .= '<div class="divide-y divide-gray-200">';
+        
+        // Get available database columns for mapping
+        $dbColumns = $mappingRules->pluck('table_column_name', 'excel_column_index')->toArray();
+        $allDbColumns = $mappingRules->pluck('table_column_name')->toArray();
+        
+        foreach ($headers as $index => $header) {
+            $excelCol = $this->indexToColumn($index);
+            $mappedDbCol = $dbColumns[$excelCol] ?? '';
+            
+            $html .= '<div class="p-4 hover:bg-gray-50 transition">';
+            $html .= '<div class="flex items-start space-x-4">';
+            
+            // Checkbox
+            $html .= '<div class="flex items-center h-10">';
+            $html .= '<input type="checkbox" checked class="column-checkbox rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" data-excel-col="' . $excelCol . '">';
             $html .= '</div>';
+            
+            // Excel column info
+            $html .= '<div class="flex-1">';
+            $html .= '<div class="flex items-center space-x-2 mb-2">';
+            $html .= '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Excel: ' . $excelCol . '</span>';
+            $html .= '<span class="text-sm font-medium text-gray-900">' . htmlspecialchars($header) . '</span>';
+            $html .= '</div>';
+            
+            // Mapping dropdown
+            $html .= '<div class="flex items-center space-x-2">';
+            $html .= '<span class="text-sm text-gray-500">→</span>';
+            $html .= '<select id="mapping_' . $excelCol . '" class="text-sm rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">';
+            $html .= '<option value="">-- Tidak Diimport --</option>';
+            foreach ($allDbColumns as $dbCol) {
+                $selected = ($dbCol === $mappedDbCol) ? 'selected' : '';
+                $html .= '<option value="' . htmlspecialchars($dbCol) . '" ' . $selected . '>' . htmlspecialchars($dbCol) . '</option>';
+            }
+            $html .= '</select>';
+            $html .= '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">DB: ' . ($mappedDbCol ?: 'N/A') . '</span>';
+            $html .= '</div>';
+            
+            // Sample data
+            $sampleData = [];
+            foreach ($previewRows as $row) {
+                if (isset($row[$index]) && $row[$index] != '') {
+                    $sampleData[] = $row[$index];
+                }
+                if (count($sampleData) >= 2) break;
+            }
+            
+            if (!empty($sampleData)) {
+                $html .= '<div class="mt-2 text-xs text-gray-500">';
+                $html .= '<span class="font-medium">Contoh data:</span> ';
+                $html .= htmlspecialchars(implode(', ', $sampleData));
+                if (count($previewRows) > 2) {
+                    $html .= ', ...';
+                }
+                $html .= '</div>';
+            }
+            
+            $html .= '</div></div></div>';
         }
-        $html .= '</div>';
-        $html .= '</div>';
         
-        // Preview table
-        $html .= '<div>';
-        $html .= '<h4 class="font-medium mb-2">Preview Data (5 baris pertama):</h4>';
-        $html .= '<div class="overflow-x-auto border rounded max-h-96">';
+        $html .= '</div></div>';
+        
+        // Preview data table
+        $html .= '<div class="border rounded-lg overflow-hidden">';
+        $html .= '<div class="bg-gray-50 px-4 py-3 border-b">';
+        $html .= '<h4 class="font-medium text-gray-900">Preview Data (5 baris pertama)</h4>';
+        $html .= '</div>';
+        $html .= '<div class="overflow-x-auto max-h-80">';
         $html .= '<table class="min-w-full divide-y divide-gray-200 text-sm">';
         
         // Table header
-        $html .= '<thead class="bg-gray-50 sticky top-0"><tr>';
-        $html .= '<th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>';
-        foreach ($headers as $header) {
-            $html .= '<th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">' . htmlspecialchars($header) . '</th>';
+        $html .= '<thead class="bg-gray-50 sticky top-0">';
+        $html .= '<tr>';
+        $html .= '<th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-100">#</th>';
+        foreach ($headers as $index => $header) {
+            $excelCol = $this->indexToColumn($index);
+            $html .= '<th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">';
+            $html .= '<div class="flex flex-col">';
+            $html .= '<span class="text-yellow-600">' . $excelCol . '</span>';
+            $html .= '<span class="font-normal normal-case text-gray-700">' . htmlspecialchars($header) . '</span>';
+            $html .= '</div>';
+            $html .= '</th>';
         }
         $html .= '</tr></thead>';
         
         // Table body
         $html .= '<tbody class="bg-white divide-y divide-gray-200">';
-        $index = 1;
+        $rowNum = 1;
         foreach ($previewRows as $row) {
             $html .= '<tr class="hover:bg-gray-50">';
-            $html .= '<td class="px-3 py-2 whitespace-nowrap text-gray-500">' . $index . '</td>';
+            $html .= '<td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500 font-medium bg-gray-50">' . $rowNum . '</td>';
             foreach ($row as $cell) {
-                $html .= '<td class="px-3 py-2 whitespace-nowrap">' . htmlspecialchars($cell ?? '') . '</td>';
+                $html .= '<td class="px-3 py-2 whitespace-nowrap text-sm">' . htmlspecialchars($cell ?? '') . '</td>';
             }
             $html .= '</tr>';
-            $index++;
+            $rowNum++;
         }
         $html .= '</tbody>';
         
         $html .= '</table>';
         $html .= '</div>';
-        $html .= '<p class="text-xs text-gray-500 mt-2">* Hanya menampilkan 5 baris pertama sebagai preview</p>';
+        $html .= '<div class="bg-gray-50 px-4 py-2 border-t">';
+        $html .= '<p class="text-xs text-gray-500">Menampilkan 5 dari total ' . ($previewRows->count() + $mapping->header_row) . '+ baris</p>';
+        $html .= '</div>';
         $html .= '</div>';
         
         $html .= '</div>';
         
         return $html;
+    }
+
+    /**
+     * Convert column index (0-based) to Excel column letter
+     */
+    private function indexToColumn(int $index): string
+    {
+        $column = '';
+        while ($index >= 0) {
+            $column = chr(65 + ($index % 26)) . $column;
+            $index = intval($index / 26) - 1;
+        }
+        return $column;
     }
 
     /**
