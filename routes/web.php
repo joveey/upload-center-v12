@@ -8,8 +8,8 @@ use Illuminate\Support\Facades\Route;
 
 // Public Welcome Page (accessible by everyone)
 Route::get('/', function () {
-    return view('welcome');
-})->name('welcome');
+    return view('auth.login');
+})->name('Login Page');
 
 // Dashboard (only for authenticated users)
 Route::get('/dashboard', [DashboardController::class, 'index'])
