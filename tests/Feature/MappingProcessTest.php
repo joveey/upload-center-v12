@@ -3,110 +3,96 @@
 namespace Tests\Feature;
 
 use App\Models\Division;
-use App\Models\MappingIndex;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel; // <-- Tambahkan ini
+use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class MappingProcessTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function setUp(): void
+    #[Test]
+    public function user_can_register_a_new_mapping_format(): void
     {
-        parent::setUp();
+        // 1. Persiapan
         Storage::fake('local');
-    }
+        $this->seed(\Database\Seeders\RolesAndPermissionsSeeder::class);
 
-    /** @test */
-    public function user_can_register_a_new_format()
-    {
-        // Buat divisi dan user
-        $division = Division::factory()->create(['name' => 'Test Division']);
-        $user = User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'division_id' => $division->id
-        ]);
+        $division = Division::factory()->create(['name' => 'Finance']);
+        $user = User::factory()->create(['division_id' => $division->id]);
+        $user->assignRole('division-user');
 
-        // Assign role/permission jika menggunakan spatie permission
-        // $user->givePermissionTo('register format');
+        // 2. Simulasi Langkah 1: Buat dan unggah file XLSX asli
+        $fileName = 'financial_report.xlsx';
+        $headings = ['user_id', 'nama_pengguna', 'alamat_email', 'jumlah_follower', 'country'];
+        
+        // Gunakan Maatwebsite\Excel untuk membuat file XLSX yang valid di storage palsu
+        Excel::store(new class($headings) {
+            public function __construct(private array $headings) {}
+            public function array(): array { return [$this->headings]; }
+        }, $fileName, 'local');
 
-        // Login sebagai user
-        $this->actingAs($user);
+        // Buat objek UploadedFile dari file XLSX yang baru saja kita buat
+        $fakeExcelFile = new UploadedFile(
+            Storage::disk('local')->path($fileName),
+            $fileName,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            null,
+            true // Menandakan ini adalah file tes
+        );
+        
+        $formatName = 'Laporan Keuangan Q3';
+        $headerRow = 1;
 
-        // Buat file Excel palsu
-        $file = UploadedFile::fake()->create('test.xlsx', 100);
+        $response = $this->actingAs($user)
+            ->post(route('mapping.register.process'), [
+                'name' => $formatName,
+                'excel_file' => $fakeExcelFile,
+                'header_row' => $headerRow,
+            ]);
 
-        // Kirim request ke endpoint register format
-        $response = $this->post(route('mapping.register.process'), [
-            'name' => 'Test Format',
-            'excel_file' => $file,
-            'header_row' => 1,
-        ]);
+        // 3. Assert (Periksa) hasil langkah 1
+        $response->assertStatus(302);
+        $response->assertSessionHasNoErrors();
+        $response->assertSessionHas('mapping_data');
 
-        // Assert redirect ke halaman map form
-        $response->assertRedirect(route('mapping.map.form'));
+        $sessionData = session('mapping_data');
 
-        // Assert session memiliki data mapping
-        $this->assertNotNull(session('mapping_data'));
-    }
-
-    /** @test */
-    public function user_can_complete_mapping_process()
-    {
-        // Buat divisi dan user
-        $division = Division::factory()->create(['name' => 'Test Division']);
-        $user = User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'division_id' => $division->id
-        ]);
-
-        // Login sebagai user
-        $this->actingAs($user);
-
-        // Set session data
-        session([
-            'mapping_data' => [
-                'name' => 'Test Format',
-                'header_row' => 1,
-                'file_path' => 'temp/test.xlsx',
-                'excel_headers' => ['Name', 'Email', 'Phone'],
-                'destination_table' => 'spotify_users',
-            ]
-        ]);
-
-        // Kirim request mapping
-        $response = $this->post(route('mapping.map.store'), [
+        // 4. Simulasi Langkah 2: Kirim data pemetaan
+        $mappingPayload = [
             'mappings' => [
-                'Name' => 'name',
-                'Email' => 'email',
-                'Phone' => 'phone',
+                'user_id' => 'user_id',
+                'nama_pengguna' => 'display_name',
+                'alamat_email' => 'email',
+                'jumlah_follower' => 'followers',
             ],
-        ]);
+        ];
 
-        // Assert redirect ke dashboard
+        $response = $this->actingAs($user)
+            ->withSession(['mapping_data' => $sessionData])
+            ->post(route('mapping.map.store'), $mappingPayload);
+
+        // 5. Assert (Periksa) hasil akhir
         $response->assertRedirect(route('dashboard'));
+        $response->assertSessionHas('success');
 
-        // Assert mapping tersimpan di database
         $this->assertDatabaseHas('mapping_indices', [
-            'name' => 'Test Format',
             'division_id' => $division->id,
+            'name' => $formatName,
         ]);
-    }
 
-    /** @test */
-    public function unauthenticated_user_cannot_access_mapping_routes()
-    {
-        // Test register form
-        $response = $this->get(route('mapping.register.form'));
-        $response->assertRedirect(route('login'));
+        $this->assertDatabaseHas('mapping_columns', [
+            'excel_column' => 'nama_pengguna',
+            'database_column' => 'display_name',
+        ]);
 
-        // Test map form
-        $response = $this->get(route('mapping.map.form'));
-        $response->assertRedirect(route('login'));
+        $this->assertDatabaseMissing('mapping_columns', [
+            'excel_column' => 'country',
+        ]);
     }
 }

@@ -50,8 +50,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/register-format', [MappingController::class, 'processRegisterForm'])->name('mapping.register.process');
         Route::get('/register-format/map', [MappingController::class, 'showMapForm'])->name('mapping.map.form');
         Route::post('/register-format/map', [MappingController::class, 'storeMapping'])->name('mapping.map.store');
+        Route::post('/register-format/preview', [MappingController::class, 'previewUpload'])->name('mapping.preview');
     });
 });
+
+    
 
 // Memuat rute-rute autentikasi bawaan Breeze (login, register, dll.)
 require __DIR__.'/auth.php';

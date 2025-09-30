@@ -10,7 +10,7 @@
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6 text-gray-900">
                     <h3 class="text-lg font-medium text-gray-900">
-                        Langkah 2: Petakan Kolom
+                        Langkah 2: Petakan Kolom Secara Interaktif
                     </h3>
                     <p class="mt-1 text-sm text-gray-600 mb-4">
                         Jodohkan kolom dari file Excel Anda (kiri) ke kolom tabel tujuan di database (kanan) untuk format <span class="font-bold">"{{ $formatName }}"</span>.
@@ -18,15 +18,15 @@
 
                     <form action="{{ route('mapping.map.store') }}" method="POST">
                         @csrf
-                        <div class="overflow-x-auto">
+                        <div class="overflow-x-auto border border-gray-200 rounded-lg">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Kolom dari File Excel
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/2">
+                                            Kolom dari File Anda
                                         </th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Petakan ke Kolom Database
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/2">
+                                            Simpan ke Kolom Database
                                         </th>
                                     </tr>
                                 </thead>
@@ -38,7 +38,7 @@
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                             <select name="mappings[{{ $header }}]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                                <option value="">-- Jangan Simpan --</option>
+                                                <option value="">-- Jangan Simpan Kolom Ini --</option>
                                                 @foreach ($databaseColumns as $dbColumn)
                                                 <option value="{{ $dbColumn }}">{{ $dbColumn }}</option>
                                                 @endforeach

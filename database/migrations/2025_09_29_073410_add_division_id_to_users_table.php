@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('users', function (Blueprint $table) {
             $table->foreignId('division_id')
                   ->nullable()
-                  ->after('id')
+                  // ->after('id') // HAPUS BARIS INI
                   ->constrained('divisions')
                   ->onDelete('set null');
         });
