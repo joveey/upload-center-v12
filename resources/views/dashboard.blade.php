@@ -48,17 +48,26 @@
                                 <x-input-label for="mapping_id" :value="__('Pilih Format Laporan')" />
                                 <select name="mapping_id" id="mapping_id" class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm" required>
                                     <option value="">-- Harap Pilih --</option>
-                                    @foreach($mappings as $mapping)
-                                        <option value="{{ $mapping->id }}">{{ $mapping->name }}</option>
-                                    @endforeach
+                                    @forelse($mappings as $mapping)
+                                        <option value="{{ $mapping->id }}">
+                                            {{ $mapping->description ?? $mapping->code }}
+                                        </option>
+                                    @empty
+                                        <option value="" disabled>Belum ada format terdaftar</option>
+                                    @endforelse
                                 </select>
+                                @if($mappings->isEmpty())
+                                    <p class="mt-2 text-sm text-amber-600">
+                                        ⚠️ Belum ada format yang terdaftar. Silakan buat format baru terlebih dahulu.
+                                    </p>
+                                @endif
                             </div>
                             <div>
                                 <x-input-label for="data_file" :value="__('Pilih File Excel')" />
                                 <input type="file" name="data_file" id="data_file" accept=".xlsx,.xls" class="mt-1 block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none" required>
                             </div>
                             <div>
-                                <x-primary-button type="button" id="previewButton">
+                                <x-primary-button type="button" id="previewButton" :disabled="$mappings->isEmpty()">
                                     {{ __('Preview & Upload') }}
                                 </x-primary-button>
                             </div>
@@ -85,9 +94,14 @@
                             <ul class="divide-y divide-gray-200">
                                 @forelse ($mappings as $mapping)
                                     <li class="px-4 py-3">
-                                        <p class="text-sm font-medium text-gray-900 truncate">{{ $mapping->description }}</p>
+                                        <p class="text-sm font-medium text-gray-900 truncate">
+                                            {{ $mapping->description ?? $mapping->code }}
+                                        </p>
+                                        <p class="text-xs text-gray-500">Code: {{ $mapping->code }}</p>
                                         <p class="text-xs text-gray-500">Tabel: {{ $mapping->table_name ?? 'N/A' }}</p>
-                                        <p class="text-xs text-gray-500">Kolom: {{ $mapping->columns->pluck('table_column_name')->implode(', ') }}</p>
+                                        <p class="text-xs text-gray-500">
+                                            Kolom: {{ $mapping->columns->pluck('table_column_name')->implode(', ') }}
+                                        </p>
                                     </li>
                                 @empty
                                     <li class="px-4 py-4 text-sm text-gray-500 text-center">

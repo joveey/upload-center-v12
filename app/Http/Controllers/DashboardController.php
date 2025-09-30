@@ -22,8 +22,9 @@ class DashboardController extends Controller
         // Pastikan pengguna memiliki divisi sebelum query
         if ($user && $user->division_id) {
             // Ambil hanya mapping yang dimiliki oleh divisi pengguna
+            // PERBAIKAN: Ganti orderBy('name') menjadi orderBy('description')
             $mappings = MappingIndex::where('division_id', $user->division_id)
-                ->orderBy('name')
+                ->orderBy('description')
                 ->get();
         }
 

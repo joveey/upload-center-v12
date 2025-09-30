@@ -18,30 +18,31 @@ use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
 
 class MappingController extends Controller
-{
+    {
     /**
      * Menampilkan formulir untuk membuat format dan tabel baru secara manual.
      */
     public function showRegisterForm(): View
     {
-        return view('register_form');
+            return view('register_form');
     }
 
     /**
-     * Memproses formulir: MEMBUAT TABEL BARU di database dan menyimpan aturan pemetaan.
+      * Memproses formulir: MEMBUAT TABEL BARU di database dan menyimpan aturan pemetaan.
      */
     public function processRegisterForm(Request $request): RedirectResponse
     {
         Log::info('Memulai proses pendaftaran format & pembuatan tabel baru.');
         
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:mapping_indices,code', // UBAH: code, bukan name
+            'name' => 'required|string|max:255|unique:mapping_indices,code',
             'table_name' => 'required|string|regex:/^[a-z0-9_]+$/|unique:mapping_indices,table_name',
             'header_row' => 'required|integer|min:1',
             'mappings' => 'required|array|min:1',
             'mappings.*.excel_column' => 'required|string|distinct|max:10',
             'mappings.*.database_column' => ['required', 'string', 'distinct', 'regex:/^[a-z0-9_]+$/', Rule::notIn(['id'])],
         ], [
+            'name.unique' => 'Nama format ini sudah digunakan.',
             'table_name.regex' => 'Nama tabel hanya boleh berisi huruf kecil, angka, dan underscore (_).',
             'table_name.unique' => 'Nama tabel ini sudah digunakan oleh format lain.',
             'mappings.*.database_column.regex' => 'Nama kolom hanya boleh berisi huruf kecil, angka, dan underscore (_).',
@@ -57,6 +58,7 @@ class MappingController extends Controller
 
         DB::beginTransaction();
         try {
+            // Buat tabel baru
             Schema::create($tableName, function (Blueprint $table) use ($validated) {
                 $table->id();
                 foreach ($validated['mappings'] as $mapping) {
@@ -66,22 +68,24 @@ class MappingController extends Controller
             });
             Log::info("Tabel '{$tableName}' berhasil dibuat.");
 
+            // Simpan format ke mapping_indices dengan struktur BARU
             $mappingIndex = MappingIndex::create([
-                'code' => strtolower(str_replace(' ', '_', $validated['name'])), // UBAH: code
-                'description' => $validated['name'], // UBAH: description
+                'code' => strtolower(str_replace(' ', '_', $validated['name'])),
+                'description' => $validated['name'],
                 'table_name' => $tableName,
                 'header_row' => $validated['header_row'],
                 'division_id' => Auth::user()->division_id,
             ]);
             Log::info("Format berhasil disimpan di mapping_indices dengan ID: {$mappingIndex->id}");
 
+            // Simpan mapping kolom dengan NAMA KOLOM BARU
             foreach ($validated['mappings'] as $mapping) {
                 MappingColumn::create([
                     'mapping_index_id' => $mappingIndex->id,
-                    'excel_column_index' => strtoupper($mapping['excel_column']), // UBAH: excel_column_index
-                    'table_column_name' => $mapping['database_column'], // UBAH: table_column_name
-                    'data_type' => 'string', // TAMBAH
-                    'is_required' => false, // TAMBAH
+                    'excel_column_index' => strtoupper($mapping['excel_column']),  // PERBAIKAN: gunakan excel_column_index
+                    'table_column_name' => $mapping['database_column'],             // PERBAIKAN: gunakan table_column_name
+                    'data_type' => 'string',
+                    'is_required' => false,
                 ]);
             }
             Log::info("Pemetaan kolom berhasil disimpan.");
