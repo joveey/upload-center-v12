@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <div class="flex items-center space-x-4">
-                <div class="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 rounded-2xl flex items-center justify-center shadow-lg transform hover:rotate-6 transition-transform duration-300">
+                <div class="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg transform hover:rotate-6 transition-transform duration-300">
                     <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
@@ -18,7 +18,7 @@
             </div>
             @can('register format')
                 <a href="{{ route('mapping.register.form') }}">
-                    <button class="group inline-flex items-center px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform">
+                    <button class="group inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-blue-700 hover:to-cyan-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform">
                         <svg class="w-5 h-5 mr-2 group-hover:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                         </svg>
@@ -32,13 +32,13 @@
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             
-            <!-- Statistics Cards -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                 <div class="bg-white overflow-hidden shadow-lg rounded-2xl border border-gray-100">
                     <div class="p-6">
                         <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-purple-100 rounded-xl p-3">
-                                <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            {{-- Diubah: Warna ikon kartu statistik --}}
+                            <div class="flex-shrink-0 bg-blue-100 rounded-xl p-3">
+                                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                 </svg>
                             </div>
@@ -99,18 +99,19 @@
                 </div>
             </div>
 
-            <!-- Formats Grid -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 @forelse($mappings as $mapping)
-                    <div class="bg-white overflow-hidden shadow-lg rounded-2xl border border-gray-100 hover:shadow-2xl hover:border-purple-300 transition-all duration-300 transform hover:-translate-y-1">
-                        <!-- Card Header -->
-                        <div class="bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-6 py-4">
+                    {{-- Diubah: Border hover kartu --}}
+                    <div class="bg-white overflow-hidden shadow-lg rounded-2xl border border-gray-100 hover:shadow-2xl hover:border-blue-300 transition-all duration-300 transform hover:-translate-y-1">
+                        {{-- Diubah: Gradient header kartu --}}
+                        <div class="bg-gradient-to-r from-blue-500 to-cyan-500 px-6 py-4">
                             <div class="flex items-start justify-between">
                                 <div class="flex-1">
                                     <h3 class="text-lg font-bold text-white truncate" title="{{ $mapping->description }}">
                                         {{ $mapping->description ?? $mapping->code }}
                                     </h3>
-                                    <p class="text-sm text-purple-100 mt-1">
+                                    {{-- Diubah: Warna teks subjudul --}}
+                                    <p class="text-sm text-blue-100 mt-1">
                                         {{ $mapping->columns->count() }} kolom • {{ number_format($mapping->row_count) }} baris
                                     </p>
                                 </div>
@@ -122,12 +123,11 @@
                             </div>
                         </div>
 
-                        <!-- Card Body -->
                         <div class="p-6">
-                            <!-- Table Info -->
                             <div class="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
                                 <div class="flex items-center text-sm">
-                                    <svg class="w-4 h-4 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                                    {{-- Diubah: Warna ikon info tabel --}}
+                                    <svg class="w-4 h-4 mr-2 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                                         <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"></path>
                                         <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"></path>
                                         <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"></path>
@@ -136,7 +136,8 @@
                                     <span class="ml-2 text-gray-600 font-mono text-xs">{{ $mapping->table_name }}</span>
                                 </div>
                                 <div class="flex items-center text-sm mt-2">
-                                    <svg class="w-4 h-4 mr-2 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                                    {{-- Diubah: Warna ikon info header row --}}
+                                    <svg class="w-4 h-4 mr-2 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                                         <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path>
                                     </svg>
                                     <span class="font-semibold text-gray-700">Header Row:</span>
@@ -144,12 +145,12 @@
                                 </div>
                             </div>
 
-                            <!-- Columns Preview -->
                             <div class="mb-4">
                                 <p class="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Kolom Database:</p>
                                 <div class="flex flex-wrap gap-1.5">
                                     @foreach($mapping->columns->take(6) as $col)
-                                        <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-800">
+                                        {{-- Diubah: Warna badge kolom --}}
+                                        <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-100 text-blue-800">
                                             {{ $col->excel_column_index }}: {{ $col->table_column_name }}
                                         </span>
                                     @endforeach
@@ -161,7 +162,6 @@
                                 </div>
                             </div>
 
-                            <!-- Unique Keys -->
                             @php
                                 $uniqueKeys = $mapping->columns->where('is_unique_key', true);
                             @endphp
@@ -181,10 +181,9 @@
                                 </div>
                             @endif
 
-                            <!-- Action Buttons -->
                             <div class="grid grid-cols-2 gap-3">
                                 <a href="{{ route('mapping.view.data', $mapping->id) }}" 
-                                   class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                   class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-blue-700 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all duration-200 shadow-md hover:shadow-lg group">
                                     <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
@@ -210,8 +209,9 @@
                             <h3 class="text-xl font-bold text-gray-900 mb-2">Belum Ada Format</h3>
                             <p class="text-gray-600 mb-6">Buat format baru untuk memulai mengelola data Excel Anda</p>
                             @can('register format')
+                                {{-- Diubah: Tombol pada state kosong --}}
                                 <a href="{{ route('mapping.register.form') }}" 
-                                   class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition-all duration-300 shadow-lg hover:shadow-xl">
+                                   class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-blue-700 hover:to-cyan-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-all duration-300 shadow-lg hover:shadow-xl">
                                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                                     </svg>
