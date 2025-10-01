@@ -91,8 +91,8 @@
                             </div>
                         </div>
                         
-                        <!-- Column Mapping Section -->
-                        <div x-data="{ mappings: [{ excel_column: '', db_column: '' }] }" class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-100">
+                        <!-- Column Mapping Section with Unique Key Checkbox -->
+                        <div x-data="{ mappings: [{ excel_column: '', db_column: '', is_unique: false }] }" class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-100">
                             <div class="flex items-center justify-between mb-4">
                                 <h4 class="text-lg font-bold text-gray-800 flex items-center">
                                     <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -108,36 +108,83 @@
 
                             <div class="space-y-3">
                                 <template x-for="(mapping, index) in mappings" :key="index">
-                                    <div class="flex items-center space-x-3 p-4 bg-white rounded-lg border border-purple-200 shadow-sm hover:shadow-md transition-shadow duration-200">
-                                        <div class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-                                            <span x-text="index + 1"></span>
-                                        </div>
-                                        <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div>
-                                                <label class="block text-xs font-semibold text-gray-700 mb-1">Kolom Excel</label>
-                                                <input x-model="mapping.excel_column" x-bind:id="'excel_column_' + index" class="block w-full px-3 py-2 border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-lg shadow-sm uppercase text-sm transition-all duration-200" type="text" x-bind:name="'mappings[' + index + '][excel_column]'" required placeholder="A" />
+                                    <div class="p-4 bg-white rounded-lg border border-purple-200 shadow-sm hover:shadow-md transition-shadow duration-200">
+                                        <div class="flex items-start space-x-3">
+                                            <div class="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+                                                <span x-text="index + 1"></span>
                                             </div>
-                                            <div>
-                                                <label class="block text-xs font-semibold text-gray-700 mb-1">Nama Kolom Database</label>
-                                                <input x-model="mapping.db_column" x-bind:id="'db_column_' + index" class="block w-full px-3 py-2 border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-lg shadow-sm font-mono text-sm transition-all duration-200" type="text" x-bind:name="'mappings[' + index + '][database_column]'" required placeholder="nama_produk"/>
+                                            <div class="flex-1 space-y-3">
+                                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Kolom Excel</label>
+                                                        <input x-model="mapping.excel_column" x-bind:id="'excel_column_' + index" class="block w-full px-3 py-2 border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-lg shadow-sm uppercase text-sm transition-all duration-200" type="text" x-bind:name="'mappings[' + index + '][excel_column]'" required placeholder="A" maxlength="3" />
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-semibold text-gray-700 mb-1">Nama Kolom Database</label>
+                                                        <input x-model="mapping.db_column" x-bind:id="'db_column_' + index" class="block w-full px-3 py-2 border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-lg shadow-sm font-mono text-sm transition-all duration-200" type="text" x-bind:name="'mappings[' + index + '][database_column]'" required placeholder="nama_produk"/>
+                                                    </div>
+                                                </div>
+                                                <!-- Checkbox Kunci Unik -->
+                                                <div class="flex items-center space-x-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                                                    <input type="checkbox" x-model="mapping.is_unique" x-bind:id="'is_unique_' + index" x-bind:name="'mappings[' + index + '][is_unique_key]'" value="1" class="rounded border-amber-300 text-amber-600 shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200 focus:ring-opacity-50">
+                                                    <label x-bind:for="'is_unique_' + index" class="text-sm font-semibold text-amber-800 cursor-pointer flex items-center flex-1">
+                                                        <svg class="w-4 h-4 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                                                        </svg>
+                                                        Jadikan Kunci Unik?
+                                                    </label>
+                                                    <div class="group relative flex-shrink-0">
+                                                        <svg class="w-4 h-4 text-amber-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                                        </svg>
+                                                        <div class="absolute bottom-full right-0 mb-2 hidden group-hover:block w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-10">
+                                                            <p class="font-semibold mb-1">💡 Kunci Unik untuk Upsert</p>
+                                                            <p>Kolom ini akan digunakan untuk mengidentifikasi data duplikat saat mode Upsert. Data dengan kunci yang sama akan di-update, bukan duplikat.</p>
+                                                            <div class="absolute top-full right-4 -mt-1">
+                                                                <div class="border-4 border-transparent border-t-gray-900"></div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
+                                            <button type="button" @click="mappings.splice(index, 1)" x-show="mappings.length > 1" class="flex-shrink-0 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors duration-200 group">
+                                                <svg class="w-5 h-5 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                </svg>
+                                            </button>
                                         </div>
-                                        <button type="button" @click="mappings.splice(index, 1)" x-show="mappings.length > 1" class="flex-shrink-0 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors duration-200 group">
-                                            <svg class="w-5 h-5 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                            </svg>
-                                        </button>
                                     </div>
                                 </template>
                             </div>
 
                             <div class="mt-4">
-                                <button type="button" @click="mappings.push({ excel_column: '', db_column: '' })" class="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 border border-transparent rounded-lg font-semibold text-sm text-white hover:from-purple-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                <button type="button" @click="mappings.push({ excel_column: '', db_column: '', is_unique: false })" class="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 border border-transparent rounded-lg font-semibold text-sm text-white hover:from-purple-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-all duration-200 shadow-md hover:shadow-lg group">
                                     <svg class="w-5 h-5 mr-2 group-hover:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                                     </svg>
                                     Tambah Kolom
                                 </button>
+                            </div>
+
+                            <!-- Info Box tentang Kunci Unik -->
+                            <div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div class="flex items-start space-x-3">
+                                    <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <div>
+                                        <h5 class="text-sm font-semibold text-blue-900 mb-1">Tentang Kunci Unik</h5>
+                                        <p class="text-xs text-blue-800">
+                                            Kolom yang ditandai sebagai <strong>Kunci Unik</strong> akan digunakan saat mode <strong>Upsert</strong> untuk mencegah duplikasi data. 
+                                            Jika data dengan kunci yang sama sudah ada, data tersebut akan di-update. 
+                                            Anda bisa menandai lebih dari satu kolom sebagai kunci unik (composite key).
+                                        </p>
+                                        <p class="text-xs text-blue-700 mt-2">
+                                            <strong>Contoh:</strong> Jika Anda menandai kolom <code class="bg-blue-100 px-1 py-0.5 rounded">product_code</code> sebagai kunci unik, 
+                                            maka product dengan kode yang sama tidak akan diduplikat.
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -150,12 +197,11 @@
                                 Kembali
                             </a>
 
-                            <button type="submit" class="inline-flex items-center px-8 py-3 bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:from-blue-700 hover:via-cyan-700 hover:to-teal-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform group">
+                            <button type="submit" class="inline-flex items-center px-8 py-3 bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:from-blue-700 hover:via-cyan-700 hover:to-teal-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform group relative overflow-hidden">
                                 <svg class="w-5 h-5 mr-2 group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                 </svg>
                                 Simpan Format & Buat Tabel
-                                <span class="absolute inset-0 rounded-lg bg-gradient-to-r from-white/0 via-white/10 to-white/0 transform -skew-x-12 group-hover:translate-x-full transition-transform duration-700"></span>
                             </button>
                         </div>
                     </form>
@@ -192,16 +238,16 @@
                     </div>
                 </div>
 
-                <div class="bg-teal-50 rounded-xl p-4 border border-teal-100">
+                <div class="bg-amber-50 rounded-xl p-4 border border-amber-100">
                     <div class="flex items-start space-x-3">
-                        <div class="flex-shrink-0 w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center">
+                        <div class="flex-shrink-0 w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
                             <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
                             </svg>
                         </div>
                         <div>
-                            <h5 class="font-semibold text-gray-800 text-sm">Auto Create</h5>
-                            <p class="text-xs text-gray-600 mt-1">Tabel akan dibuat otomatis sesuai mapping</p>
+                            <h5 class="font-semibold text-gray-800 text-sm">Kunci Unik</h5>
+                            <p class="text-xs text-gray-600 mt-1">Tandai kolom untuk mencegah duplikasi data</p>
                         </div>
                     </div>
                 </div>

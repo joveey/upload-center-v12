@@ -1,100 +1,114 @@
 <?php
-// app/Http/Controllers/DashboardController.php
 
 namespace App\Http\Controllers;
 
+use App\Models\MappingColumn;
 use App\Models\MappingIndex;
-use App\Models\UploadLog;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
-use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    /**
+     * Display the user's dashboard.
+     */
     public function index(): View
     {
         $user = Auth::user();
-        $division = $user->division;
         $mappings = collect();
-        $uploadStats = null;
 
         if ($user && $user->division_id) {
-            if ($division->isSuperUser()) {
-                // SuperUser bisa lihat semua
-                $mappings = MappingIndex::with('columns')->orderBy('description')->get();
-                $uploadStats = $this->getUploadStatsForSuperUser();
-            } else {
-                // Divisi biasa hanya lihat mapping mereka
-                $mappings = MappingIndex::with('columns')
-                    ->where('division_id', $user->division_id)
-                    ->orderBy('description')
-                    ->get();
-            }
+            $mappings = MappingIndex::where('division_id', $user->division_id)
+                ->orderBy('description')
+                ->get();
         }
 
         return view('dashboard', [
             'mappings' => $mappings,
-            'uploadStats' => $uploadStats,
         ]);
     }
 
-    private function getUploadStatsForSuperUser()
+    /**
+     * Store a new format mapping and create the table.
+     */
+    public function store(Request $request): RedirectResponse
     {
-        $fourWeeksAgo = Carbon::now()->subWeeks(4)->startOfWeek();
+        Log::info('Memulai proses pendaftaran format & pembuatan tabel baru.');
         
-        $stats = UploadLog::select(
-                DB::raw('YEAR(created_at) as year'),
-                DB::raw('WEEK(created_at, 1) as week'),
-                'division_id',
-                DB::raw('COUNT(*) as total_uploads'),
-                DB::raw('SUM(rows_imported) as total_rows')
-            )
-            ->where('created_at', '>=', $fourWeeksAgo)
-            ->where('status', 'success')
-            ->with('division')
-            ->groupBy('year', 'week', 'division_id')
-            ->orderBy('year', 'asc')
-            ->orderBy('week', 'asc')
-            ->get();
+        $validated = $request->validate([
+            'name' => 'required|string|max:255|unique:mapping_indices,code',
+            'table_name' => 'required|string|regex:/^[a-z0-9_]+$/|unique:mapping_indices,table_name',
+            'header_row' => 'required|integer|min:1',
+            'mappings' => 'required|array|min:1',
+            'mappings.*.excel_column' => 'required|string|distinct|max:10',
+            'mappings.*.database_column' => ['required', 'string', 'distinct', 'regex:/^[a-z0-9_]+$/', Rule::notIn(['id'])],
+            'mappings.*.is_unique_key' => 'nullable|boolean',
+        ], [
+            'name.unique' => 'Nama format ini sudah digunakan.',
+            'table_name.regex' => 'Nama tabel hanya boleh berisi huruf kecil, angka, dan underscore (_).',
+            'table_name.unique' => 'Nama tabel ini sudah digunakan oleh format lain.',
+            'mappings.*.database_column.regex' => 'Nama kolom hanya boleh berisi huruf kecil, angka, dan underscore (_).',
+            'mappings.*.database_column.not_in' => 'Nama kolom tidak boleh "id". Kolom "id" akan dibuat secara otomatis.',
+        ]);
 
-        $divisions = $stats->pluck('division.name')->unique()->values();
-        
-        $weeks = [];
-        for ($i = 3; $i >= 0; $i--) {
-            $weekStart = Carbon::now()->subWeeks($i)->startOfWeek();
-            $weeks[] = [
-                'label' => $weekStart->format('d M'),
-                'week' => $weekStart->week,
-                'year' => $weekStart->year,
-            ];
+        Log::info('Validasi berhasil.', $validated);
+        $tableName = $validated['table_name'];
+
+        if (Schema::hasTable($tableName)) {
+            return back()->with('error', "Tabel dengan nama '{$tableName}' sudah ada di database. Silakan gunakan nama lain.")->withInput();
         }
 
-        $chartData = [
-            'labels' => collect($weeks)->pluck('label')->toArray(),
-            'datasets' => []
-        ];
+        DB::beginTransaction();
+        try {
+            // Buat tabel baru
+            Schema::create($tableName, function (Blueprint $table) use ($validated) {
+                $table->id();
+                foreach ($validated['mappings'] as $mapping) {
+                    $table->text($mapping['database_column'])->nullable();
+                }
+                $table->timestamps();
+            });
+            Log::info("Tabel '{$tableName}' berhasil dibuat.");
 
-        foreach ($divisions as $divisionName) {
-            $divisionData = [];
-            
-            foreach ($weeks as $week) {
-                $found = $stats->first(function ($stat) use ($week, $divisionName) {
-                    return $stat->week == $week['week'] 
-                        && $stat->year == $week['year']
-                        && $stat->division->name == $divisionName;
-                });
-                
-                $divisionData[] = $found ? $found->total_uploads : 0;
+            // Simpan format ke mapping_indices
+            $mappingIndex = MappingIndex::create([
+                'code' => strtolower(str_replace(' ', '_', $validated['name'])),
+                'description' => $validated['name'],
+                'table_name' => $tableName,
+                'header_row' => $validated['header_row'],
+                'division_id' => Auth::user()->division_id,
+            ]);
+            Log::info("Format berhasil disimpan di mapping_indices dengan ID: {$mappingIndex->id}");
+
+            // Simpan mapping kolom dengan status is_unique_key
+            foreach ($validated['mappings'] as $mapping) {
+                MappingColumn::create([
+                    'mapping_index_id' => $mappingIndex->id,
+                    'excel_column_index' => strtoupper($mapping['excel_column']),
+                    'table_column_name' => $mapping['database_column'],
+                    'data_type' => 'string',
+                    'is_required' => false,
+                    'is_unique_key' => isset($mapping['is_unique_key']) && $mapping['is_unique_key'] ? true : false,
+                ]);
             }
+            Log::info("Pemetaan kolom berhasil disimpan dengan konfigurasi kunci unik.");
 
-            $chartData['datasets'][] = [
-                'label' => $divisionName,
-                'data' => $divisionData
-            ];
+            DB::commit();
+            return redirect()->route('dashboard')->with('success', "Format '{$validated['name']}' berhasil disimpan dan tabel '{$tableName}' telah dibuat!");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Schema::dropIfExists($tableName);
+            Log::error('Gagal membuat tabel/format: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage())->withInput();
         }
-
-        return $chartData;
     }
 }

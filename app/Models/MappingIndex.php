@@ -13,8 +13,8 @@ class MappingIndex extends Model
 
     protected $fillable = [
         'division_id',
-        'code',           // SESUAIKAN dengan database
-        'description',    // SESUAIKAN dengan database
+        'code',
+        'description',
         'table_name',
         'header_row',
     ];

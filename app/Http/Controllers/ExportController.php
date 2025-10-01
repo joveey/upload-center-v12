@@ -1,5 +1,4 @@
 <?php
-// app/Http/Controllers/ExportController.php
 
 namespace App\Http\Controllers;
 
@@ -17,27 +16,31 @@ class ExportController extends Controller
 {
     public function export($mappingId)
     {
-        $user = Auth::user();
+        $user = Auth::user(); 
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
 
-        // Cek permission
-        if (!$user->division->isSuperUser() && $mapping->division_id !== $user->division_id) {
+        if (!$user->hasRole('super-admin') && $mapping->division_id !== $user->division_id) {
             abort(403, 'Anda tidak memiliki akses untuk export format ini.');
         }
 
         $tableName = $mapping->table_name;
-        $columns = $mapping->columns->pluck('table_column_name')->toArray();
+        $mappedColumns = $mapping->columns->pluck('table_column_name')->toArray();
 
-        if (empty($columns)) {
+        if (empty($mappedColumns)) {
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
         }
 
-        $query = DB::table($tableName)->select($columns);
+        $actualTableColumns = DB::getSchemaBuilder()->getColumnListing($tableName);
+        $validColumns = array_intersect($mappedColumns, $actualTableColumns);
+
+        if (empty($validColumns)) {
+            return back()->with('error', 'Konfigurasi mapping tidak sesuai dengan skema tabel. Tidak ada kolom valid yang bisa diexport.');
+        }
+
+        $query = DB::table($tableName)->select($validColumns);
         
-        // Filter berdasarkan divisi jika bukan SuperUser
-        if (!$user->division->isSuperUser()) {
-            // Cek apakah table punya kolom division_id
-            if (in_array('division_id', $columns) || DB::getSchemaBuilder()->hasColumn($tableName, 'division_id')) {
+        if (!$user->hasRole('super-admin')) {
+            if (in_array('division_id', $actualTableColumns)) {
                 $query->where('division_id', $user->division_id);
             }
         }
@@ -51,36 +54,14 @@ class ExportController extends Controller
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
-        // Header styling
-        $headerRange = 'A1:' . $this->getColumnLetter(count($columns)) . '1';
-        $sheet->getStyle($headerRange)
-            ->getFill()
-            ->setFillType(Fill::FILL_SOLID)
-            ->getStartColor()
-            ->setARGB('FF6366F1');
-
-        $sheet->getStyle($headerRange)
-            ->getFont()
-            ->setBold(true)
-            ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FFFFFFFF'));
-
-        $sheet->getStyle($headerRange)
-            ->getAlignment()
-            ->setHorizontal(Alignment::HORIZONTAL_CENTER);
-
-        // Set headers
-        foreach ($columns as $index => $column) {
-            $columnMapping = $mapping->columns->firstWhere('table_column_name', $column);
-            $displayName = $columnMapping ? $columnMapping->excel_column_index : $column;
-            $sheet->setCellValue($this->getColumnLetter($index + 1) . '1', $displayName);
+        foreach ($validColumns as $index => $column) {
             $sheet->getColumnDimension($this->getColumnLetter($index + 1))->setAutoSize(true);
         }
 
-        // Set data
-        $row = 2;
+        $row = 1;
         foreach ($data as $item) {
             $col = 1;
-            foreach ($columns as $column) {
+            foreach ($validColumns as $column) {
                 $value = $item->{$column} ?? '';
                 $sheet->setCellValue($this->getColumnLetter($col) . $row, $value);
                 $col++;
@@ -88,8 +69,7 @@ class ExportController extends Controller
             $row++;
         }
 
-        // Border
-        $dataRange = 'A1:' . $this->getColumnLetter(count($columns)) . ($row - 1);
+        $dataRange = 'A1:' . $this->getColumnLetter(count($validColumns)) . ($row - 1);
         $sheet->getStyle($dataRange)
             ->getBorders()
             ->getAllBorders()
@@ -118,3 +98,4 @@ class ExportController extends Controller
         return $letter;
     }
 }
+

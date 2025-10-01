@@ -12,10 +12,11 @@ class MappingColumn extends Model
 
     protected $fillable = [
         'mapping_index_id',
-        'excel_column_index',    // PERBAIKAN: Ganti dari excel_column
-        'table_column_name',     // PERBAIKAN: Ganti dari database_column
-        'data_type',             // TAMBAHAN
-        'is_required',           // TAMBAHAN
+        'excel_column_index',
+        'table_column_name',
+        'data_type',
+        'is_required',
+        'is_unique_key',
     ];
 
     /**

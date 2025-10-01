@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\MappingColumn;
 use App\Models\MappingIndex;
-use App\Models\UploadLog;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,17 +18,17 @@ use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
 
 class MappingController extends Controller
-    {
+{
     /**
      * Menampilkan formulir untuk membuat format dan tabel baru secara manual.
      */
     public function showRegisterForm(): View
     {
-            return view('register_form');
+        return view('register_form');
     }
 
     /**
-      * Memproses formulir: MEMBUAT TABEL BARU di database dan menyimpan aturan pemetaan.
+     * Memproses formulir: MEMBUAT TABEL BARU di database dan menyimpan aturan pemetaan.
      */
     public function processRegisterForm(Request $request): RedirectResponse
     {
@@ -42,6 +41,7 @@ class MappingController extends Controller
             'mappings' => 'required|array|min:1',
             'mappings.*.excel_column' => 'required|string|distinct|max:10',
             'mappings.*.database_column' => ['required', 'string', 'distinct', 'regex:/^[a-z0-9_]+$/', Rule::notIn(['id'])],
+            'mappings.*.is_unique_key' => 'nullable',
         ], [
             'name.unique' => 'Nama format ini sudah digunakan.',
             'table_name.regex' => 'Nama tabel hanya boleh berisi huruf kecil, angka, dan underscore (_).',
@@ -69,7 +69,7 @@ class MappingController extends Controller
             });
             Log::info("Tabel '{$tableName}' berhasil dibuat.");
 
-            // Simpan format ke mapping_indices dengan struktur BARU
+            // Simpan format ke mapping_indices
             $mappingIndex = MappingIndex::create([
                 'code' => strtolower(str_replace(' ', '_', $validated['name'])),
                 'description' => $validated['name'],
@@ -79,15 +79,22 @@ class MappingController extends Controller
             ]);
             Log::info("Format berhasil disimpan di mapping_indices dengan ID: {$mappingIndex->id}");
 
-            // Simpan mapping kolom dengan NAMA KOLOM BARU
+            // Simpan mapping kolom dengan status is_unique_key
             foreach ($validated['mappings'] as $mapping) {
+                $isUniqueKey = isset($mapping['is_unique_key']) && $mapping['is_unique_key'] == '1';
+                
                 MappingColumn::create([
                     'mapping_index_id' => $mappingIndex->id,
-                    'excel_column_index' => strtoupper($mapping['excel_column']),  // PERBAIKAN: gunakan excel_column_index
-                    'table_column_name' => $mapping['database_column'],             // PERBAIKAN: gunakan table_column_name
+                    'excel_column_index' => strtoupper($mapping['excel_column']),
+                    'table_column_name' => $mapping['database_column'],
                     'data_type' => 'string',
                     'is_required' => false,
+                    'is_unique_key' => $isUniqueKey,
                 ]);
+                
+                if ($isUniqueKey) {
+                    Log::info("Kolom '{$mapping['database_column']}' ditandai sebagai kunci unik.");
+                }
             }
             Log::info("Pemetaan kolom berhasil disimpan.");
 
@@ -98,6 +105,7 @@ class MappingController extends Controller
             DB::rollBack();
             Schema::dropIfExists($tableName);
             Log::error('Gagal membuat tabel/format: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage())->withInput();
         }
     }
@@ -126,7 +134,7 @@ class MappingController extends Controller
             $excelData = Excel::toCollection(null, $request->file('data_file'))->first();
             
             // Ambil header row
-            $headerRow = $mapping->header_row - 1; // Convert to 0-based index
+            $headerRow = $mapping->header_row - 1;
             $headers = $excelData->get($headerRow);
             
             // Ambil preview data (5 rows setelah header)
@@ -135,7 +143,7 @@ class MappingController extends Controller
             // Get mapping rules
             $mappingRules = $mapping->columns;
 
-            // Generate HTML langsung
+            // Generate HTML
             $html = $this->generatePreviewHtml($mapping, $headers, $previewRows, $mappingRules);
 
             return response()->json([
@@ -145,6 +153,7 @@ class MappingController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Preview error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
                 'message' => 'Error: ' . $e->getMessage()
@@ -153,11 +162,8 @@ class MappingController extends Controller
     }
 
     /**
-     * Generate HTML for preview
+     * Generate HTML for interactive preview with checkboxes, dropdowns, and upload mode
      */
-    /**
- * Generate HTML for interactive preview with checkboxes and dropdowns
- */
     private function generatePreviewHtml($mapping, $headers, $previewRows, $mappingRules): string
     {
         $html = '<div class="space-y-6">';
@@ -173,6 +179,46 @@ class MappingController extends Controller
         $html .= '<p><strong>Tabel Tujuan:</strong> ' . htmlspecialchars($mapping->table_name) . '</p>';
         $html .= '<p><strong>Baris Header:</strong> ' . $mapping->header_row . '</p>';
         $html .= '</div></div></div></div>';
+        
+        // Upload Mode Selection
+        $html .= '<div class="border rounded-lg overflow-hidden bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">';
+        $html .= '<div class="bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-3 border-b">';
+        $html .= '<h4 class="font-medium text-white flex items-center">';
+        $html .= '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>';
+        $html .= 'Mode Upload';
+        $html .= '</h4>';
+        $html .= '</div>';
+        $html .= '<div class="p-4">';
+        $html .= '<div class="space-y-3">';
+        
+        // Upsert mode
+        $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-green-200 cursor-pointer hover:border-green-400 transition-all duration-200">';
+        $html .= '<input type="radio" name="upload_mode" value="upsert" checked class="mt-1 rounded-full border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50">';
+        $html .= '<div class="ml-3">';
+        $html .= '<div class="flex items-center">';
+        $html .= '<span class="font-semibold text-gray-900">Upsert (Update atau Insert)</span>';
+        $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Rekomendasi</span>';
+        $html .= '</div>';
+        $html .= '<p class="text-sm text-gray-600 mt-1">Update data yang sudah ada berdasarkan kunci unik, atau insert data baru jika belum ada</p>';
+        $html .= '</div>';
+        $html .= '</label>';
+        
+        // Strict mode
+        $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-red-200 cursor-pointer hover:border-red-400 transition-all duration-200">';
+        $html .= '<input type="radio" name="upload_mode" value="strict" class="mt-1 rounded-full border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50">';
+        $html .= '<div class="ml-3">';
+        $html .= '<div class="flex items-center">';
+        $html .= '<span class="font-semibold text-gray-900">Strict (Hapus Semua & Insert Baru)</span>';
+        $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Hati-hati</span>';
+        $html .= '</div>';
+        $html .= '<p class="text-sm text-gray-600 mt-1">Hapus semua data lama di tabel, lalu insert semua data baru dari file</p>';
+        $html .= '<p class="text-xs text-red-600 mt-1 font-medium">⚠️ Semua data lama akan dihapus permanen!</p>';
+        $html .= '</div>';
+        $html .= '</label>';
+        
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
         
         // Mapping Configuration section
         $html .= '<div class="border rounded-lg overflow-hidden">';
@@ -308,16 +354,20 @@ class MappingController extends Controller
     }
 
     /**
-     * Upload data - Process actual upload
+     * Upload data - Process actual upload with upsert/strict mode
      */
     public function uploadData(Request $request): JsonResponse
     {
         Log::info('=== MEMULAI UPLOAD DATA ===');
         
+        DB::beginTransaction();
+        
         try {
             $validated = $request->validate([
                 'data_file' => ['required', File::types(['xlsx', 'xls'])],
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
+                'selected_columns' => ['nullable', 'string'],
+                'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
             ]);
 
             $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
@@ -331,12 +381,14 @@ class MappingController extends Controller
 
             $tableName = $mapping->table_name;
             $headerRow = $mapping->header_row;
+            $uploadMode = $validated['upload_mode'];
             
             Log::info('Mapping info:', [
                 'id' => $mapping->id,
-                'name' => $mapping->name,
+                'description' => $mapping->description,
                 'table_name' => $tableName,
-                'header_row' => $headerRow
+                'header_row' => $headerRow,
+                'upload_mode' => $uploadMode,
             ]);
 
             if (!$tableName || !Schema::hasTable($tableName)) {
@@ -347,9 +399,50 @@ class MappingController extends Controller
                 ]);
             }
 
-            // Get mapping rules: excel_column_index => table_column_name
-            $mappingRules = $mapping->columns->pluck('table_column_name', 'excel_column_index')->toArray();
-            Log::info('Mapping rules:', $mappingRules);
+            // Parse selected columns
+            $selectedColumns = null;
+            if (!empty($validated['selected_columns'])) {
+                $selectedColumns = json_decode($validated['selected_columns'], true);
+                Log::info('Selected columns:', $selectedColumns);
+            }
+
+            // Get mapping rules and filter by selected columns
+            $mappingRules = $mapping->columns;
+            
+            if ($selectedColumns !== null && is_array($selectedColumns)) {
+                // Filter mapping rules based on selected columns
+                $mappingRules = $mappingRules->filter(function ($rule) use ($selectedColumns) {
+                    return isset($selectedColumns[$rule->excel_column_index]) 
+                        && !empty($selectedColumns[$rule->excel_column_index]);
+                });
+                Log::info('Filtered mapping rules count: ' . $mappingRules->count());
+            }
+
+            if ($mappingRules->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada kolom yang dipilih untuk diimport.'
+                ]);
+            }
+
+            // Get unique key columns for upsert
+            $uniqueKeyColumns = $mappingRules->where('is_unique_key', true)
+                ->pluck('table_column_name')
+                ->toArray();
+            
+            Log::info('Unique key columns:', $uniqueKeyColumns);
+
+            // Validate upsert mode has unique keys
+            if ($uploadMode === 'upsert' && empty($uniqueKeyColumns)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Mode Upsert memerlukan minimal satu kolom yang ditandai sebagai kunci unik. Silakan pilih mode Strict atau atur kunci unik pada format.'
+                ]);
+            }
+
+            // Create mapping array: excel_column_index => table_column_name
+            $columnMapping = $mappingRules->pluck('table_column_name', 'excel_column_index')->toArray();
+            Log::info('Column mapping:', $columnMapping);
 
             // Read Excel
             $excelData = Excel::toCollection(null, $request->file('data_file'))->first();
@@ -359,7 +452,7 @@ class MappingController extends Controller
             $dataRows = $excelData->slice($headerRow);
             Log::info('Data rows after header: ' . $dataRows->count());
 
-            $dataToInsert = [];
+            $dataToProcess = [];
             $rowNumber = $headerRow + 1;
 
             foreach ($dataRows as $row) {
@@ -373,7 +466,7 @@ class MappingController extends Controller
                 $rowData = [];
                 
                 // Map each Excel column to database column
-                foreach ($mappingRules as $excelColumn => $dbColumn) {
+                foreach ($columnMapping as $excelColumn => $dbColumn) {
                     $columnIndex = ord(strtoupper($excelColumn)) - ord('A');
                     $value = $row[$columnIndex] ?? null;
                     $rowData[$dbColumn] = $value;
@@ -384,57 +477,68 @@ class MappingController extends Controller
                 if (!empty($rowData)) {
                     $rowData['created_at'] = now();
                     $rowData['updated_at'] = now();
-                    $dataToInsert[] = $rowData;
+                    $dataToProcess[] = $rowData;
                 }
                 
                 $rowNumber++;
             }
 
-            Log::info('Total rows to insert: ' . count($dataToInsert));
+            Log::info('Total rows to process: ' . count($dataToProcess));
 
-            if (empty($dataToInsert)) {
+            if (empty($dataToProcess)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Tidak ada data valid yang dapat diimpor dari file.'
                 ]);
             }
 
-            // Insert to database
-            DB::table($tableName)->insert($dataToInsert);
-            UploadLog::create([
-                'user_id' => Auth::id(),
-                'division_id' => Auth::user()->division_id,
-                'mapping_index_id' => $mapping->id,
-                'file_name' => $request->file('data_file')->getClientOriginalName(),
-                'rows_imported' => count($dataToInsert),
-                'status' => 'success'
-                ]);
-            Log::info("=== BERHASIL INSERT " . count($dataToInsert) . " ROWS ===");
+            // Process based on upload mode
+            if ($uploadMode === 'strict') {
+                // Strict mode: Delete all existing data, then insert
+                Log::info("Mode STRICT: Menghapus semua data dari tabel {$tableName}");
+                DB::table($tableName)->delete();
+                Log::info("Data lama berhasil dihapus.");
+                
+                DB::table($tableName)->insert($dataToProcess);
+                Log::info("=== BERHASIL INSERT " . count($dataToProcess) . " ROWS (STRICT MODE) ===");
+                
+                $message = count($dataToProcess) . " baris data berhasil diimpor ke tabel '{$tableName}' (Mode Strict: Data lama dihapus).";
+                
+            } else {
+                // Upsert mode: Update existing or insert new
+                Log::info("Mode UPSERT: Menggunakan kunci unik: " . implode(', ', $uniqueKeyColumns));
+                
+                DB::table($tableName)->upsert(
+                    $dataToProcess,
+                    $uniqueKeyColumns,
+                    array_keys($dataToProcess[0])
+                );
+                
+                Log::info("=== BERHASIL UPSERT " . count($dataToProcess) . " ROWS ===");
+                
+                $message = count($dataToProcess) . " baris data berhasil diproses ke tabel '{$tableName}' (Mode Upsert).";
+            }
+
+            DB::commit();
+            Log::info("=== TRANSAKSI BERHASIL DI-COMMIT ===");
 
             return response()->json([
                 'success' => true,
-                'message' => count($dataToInsert) . " baris data berhasil diimpor ke tabel '{$tableName}'."
+                'message' => $message
             ]);
 
         } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('=== TRANSAKSI DI-ROLLBACK ===');
             Log::error('Upload error: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
-            UploadLog::create([
-                    'user_id' => Auth::id(),
-                    'division_id' => Auth::user()->division_id,
-                    'mapping_index_id' => $mapping->id,
-                    'file_name' => $request->file('data_file')->getClientOriginalName(),
-                    'rows_imported' => 0,
-                    'status' => 'failed',
-                    'error_message' => $e->getMessage()
-                ]);
-                
-                Log::error('Upload error: ' . $e->getMessage());
-                
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Gagal upload data: ' . $e->getMessage()
-                ]);
-            }
+            Log::error('File: ' . $e->getFile());
+            Log::error('Line: ' . $e->getLine());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal upload data: ' . $e->getMessage()
+            ]);
+        }
     }
 }

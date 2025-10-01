@@ -35,7 +35,6 @@
 
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <!-- Alert Messages -->
             <div class="mb-6 space-y-3">
                 @if (session('success'))
                     <div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
@@ -105,7 +104,6 @@
             @endif
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Upload Section -->
                 <div class="lg:col-span-2">
                     <div class="bg-white overflow-hidden shadow-2xl rounded-2xl border border-gray-100 hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-1">
                         <div class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-6">
@@ -195,7 +193,6 @@
                     </div>
                 </div>
 
-                <!-- Format List Section -->
                 <div class="lg:col-span-1">
                     <div class="bg-white overflow-hidden shadow-2xl rounded-2xl border border-gray-100 hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-1">
                         <div class="bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-6 py-5">
@@ -489,7 +486,8 @@
                     });
                 }
             }
-
+            
+            // ===== START: INTEGRATED CODE =====
             confirmUpload.addEventListener('click', function() {
                 const selectedColumns = {};
                 const checkboxes = document.querySelectorAll('.column-checkbox:checked');
@@ -507,8 +505,12 @@
                     }
                 });
 
+                // Get upload mode
+                const uploadMode = document.querySelector('input[name="upload_mode"]:checked').value;
+
                 const formData = new FormData(form);
                 formData.append('selected_columns', JSON.stringify(selectedColumns));
+                formData.append('upload_mode', uploadMode);
                 
                 confirmUpload.disabled = true;
                 confirmUpload.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Uploading...';
@@ -535,6 +537,7 @@
                     confirmUpload.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Upload Data';
                 });
             });
+            // ===== END: INTEGRATED CODE =====
 
             closeModal.addEventListener('click', () => modal.classList.add('hidden'));
             closeModalX.addEventListener('click', () => modal.classList.add('hidden'));
