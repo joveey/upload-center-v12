@@ -11,6 +11,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Font;
 
 class ExportController extends Controller
 {
@@ -24,14 +25,18 @@ class ExportController extends Controller
         }
 
         $tableName = $mapping->table_name;
-        $mappedColumns = $mapping->columns->pluck('table_column_name')->toArray();
+        
+        // Get column mapping: excel_column => table_column_name
+        $columnMapping = $mapping->columns->sortBy(function($col) {
+            return ord($col->excel_column_index);
+        })->pluck('table_column_name', 'excel_column_index')->toArray();
 
-        if (empty($mappedColumns)) {
+        if (empty($columnMapping)) {
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
         }
 
         $actualTableColumns = DB::getSchemaBuilder()->getColumnListing($tableName);
-        $validColumns = array_intersect($mappedColumns, $actualTableColumns);
+        $validColumns = array_intersect(array_values($columnMapping), $actualTableColumns);
 
         if (empty($validColumns)) {
             return back()->with('error', 'Konfigurasi mapping tidak sesuai dengan skema tabel. Tidak ada kolom valid yang bisa diexport.');
@@ -54,22 +59,64 @@ class ExportController extends Controller
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
-        foreach ($validColumns as $index => $column) {
-            $sheet->getColumnDimension($this->getColumnLetter($index + 1))->setAutoSize(true);
+        // Set column widths
+        foreach (array_keys($columnMapping) as $index => $excelCol) {
+            $sheet->getColumnDimension($excelCol)->setAutoSize(true);
         }
 
         $row = 1;
+        
+        // ===== ADD HEADER ROW =====
+        $col = 1;
+        foreach (array_keys($columnMapping) as $excelCol) {
+            $dbColumn = $columnMapping[$excelCol];
+            
+            // Write header (using database column name or you can customize)
+            $headerText = ucwords(str_replace('_', ' ', $dbColumn));
+            $sheet->setCellValue($excelCol . $row, $headerText);
+            $col++;
+        }
+        
+        // Style header row
+        $headerRange = 'A1:' . $this->getColumnLetter(count($columnMapping)) . '1';
+        $sheet->getStyle($headerRange)->applyFromArray([
+            'font' => [
+                'bold' => true,
+                'color' => ['rgb' => 'FFFFFF'],
+                'size' => 12,
+            ],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '4F46E5'], // Indigo color
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => '000000'],
+                ],
+            ],
+        ]);
+        
+        $row++; // Move to next row for data
+        
+        // ===== ADD DATA ROWS =====
         foreach ($data as $item) {
             $col = 1;
-            foreach ($validColumns as $column) {
-                $value = $item->{$column} ?? '';
-                $sheet->setCellValue($this->getColumnLetter($col) . $row, $value);
+            foreach (array_keys($columnMapping) as $excelCol) {
+                $dbColumn = $columnMapping[$excelCol];
+                $value = $item->{$dbColumn} ?? '';
+                $sheet->setCellValue($excelCol . $row, $value);
                 $col++;
             }
             $row++;
         }
 
-        $dataRange = 'A1:' . $this->getColumnLetter(count($validColumns)) . ($row - 1);
+        // Apply borders to all data
+        $dataRange = 'A1:' . $this->getColumnLetter(count($columnMapping)) . ($row - 1);
         $sheet->getStyle($dataRange)
             ->getBorders()
             ->getAllBorders()
@@ -98,4 +145,3 @@ class ExportController extends Controller
         return $letter;
     }
 }
-

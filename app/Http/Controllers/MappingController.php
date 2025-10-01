@@ -138,6 +138,102 @@ class MappingController extends Controller
     }
 
     /**
+     * Display all formats/mappings
+     */
+    public function index(): View
+    {
+        $user = Auth::user();
+        
+        $query = MappingIndex::with('columns', 'division');
+        
+        // Filter by division if not super-admin
+        if (!$user->hasRole('super-admin')) {
+            $query->where('division_id', $user->division_id);
+        }
+        
+        $mappings = $query->orderBy('description')->get();
+        
+        // Get statistics for each mapping
+        $mappings->each(function ($mapping) use ($user) {
+            $tableName = $mapping->table_name;
+            
+            if (Schema::hasTable($tableName)) {
+                $query = DB::table($tableName);
+                
+                // Filter by division if not super-admin
+                if (!$user->hasRole('super-admin')) {
+                    $actualTableColumns = DB::getSchemaBuilder()->getColumnListing($tableName);
+                    if (in_array('division_id', $actualTableColumns)) {
+                        $query->where('division_id', $user->division_id);
+                    }
+                }
+                
+                $mapping->row_count = $query->count();
+            } else {
+                $mapping->row_count = 0;
+            }
+        });
+        
+        return view('formats.index', [
+            'mappings' => $mappings,
+            'totalFormats' => $mappings->count(),
+        ]);
+    }
+
+    /**
+     * View data from a specific format/mapping table
+     */
+    public function viewData($mappingId): View
+    {
+        $user = Auth::user();
+        $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
+
+        // Check permission
+        if (!$user->hasRole('super-admin') && $mapping->division_id !== $user->division_id) {
+            abort(403, 'Anda tidak memiliki akses untuk melihat data format ini.');
+        }
+
+        $tableName = $mapping->table_name;
+        
+        // Get column mapping sorted by Excel column order
+        $columnMapping = $mapping->columns->sortBy(function($col) {
+            return ord($col->excel_column_index);
+        })->pluck('table_column_name', 'excel_column_index')->toArray();
+
+        if (empty($columnMapping)) {
+            return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
+        }
+
+        // Get actual table columns
+        $actualTableColumns = DB::getSchemaBuilder()->getColumnListing($tableName);
+        $validColumns = array_intersect(array_values($columnMapping), $actualTableColumns);
+
+        if (empty($validColumns)) {
+            return back()->with('error', 'Konfigurasi mapping tidak sesuai dengan skema tabel.');
+        }
+
+        // Build query
+        $query = DB::table($tableName)->select(array_merge(['id'], $validColumns, ['created_at', 'updated_at']));
+        
+        // Filter by division if not super-admin
+        if (!$user->hasRole('super-admin')) {
+            if (in_array('division_id', $actualTableColumns)) {
+                $query->where('division_id', $user->division_id);
+            }
+        }
+        
+        // Paginate results
+        $data = $query->orderBy('id', 'desc')->paginate(50);
+
+        return view('view_data', [
+            'mapping' => $mapping,
+            'columns' => $validColumns,
+            'data' => $data,
+            'columnMapping' => $columnMapping,
+        ]);
+    }
+
+    /**
      * Preview upload - Menampilkan preview data dan mapping
      */
     public function showUploadPreview(Request $request): JsonResponse

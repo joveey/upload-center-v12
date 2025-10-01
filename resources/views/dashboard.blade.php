@@ -211,66 +211,74 @@
                             </div>
                         </div>
                         
-                        <div class="p-4 max-h-96 overflow-y-auto custom-scrollbar">
-                            @forelse ($mappings as $mapping)
-                                <div class="mb-3 p-4 bg-gradient-to-br from-gray-50 to-purple-50 rounded-xl border border-purple-200 hover:border-purple-400 hover:shadow-md transition-all duration-200 group">
-                                    <div class="flex items-start justify-between">
-                                        <div class="flex-1">
-                                            <h4 class="font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors">
-                                                {{ $mapping->description ?? $mapping->code }}
-                                            </h4>
-                                            <div class="space-y-2">
-                                                <p class="text-xs text-gray-600 flex items-center">
-                                                    <svg class="w-3 h-3 mr-1.5 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>
-                                                    </svg>
-                                                    <span class="font-semibold">Code:</span> <span class="ml-1 font-mono">{{ $mapping->code }}</span>
-                                                </p>
-                                                <p class="text-xs text-gray-600 flex items-center">
-                                                    <svg class="w-3 h-3 mr-1.5 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"></path>
-                                                        <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"></path>
-                                                        <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"></path>
-                                                    </svg>
-                                                    <span class="font-semibold">Tabel:</span> <span class="ml-1 font-mono">{{ $mapping->table_name }}</span>
-                                                </p>
-                                                <div class="flex flex-wrap gap-1 mt-2">
-                                                    @foreach($mapping->columns->take(3) as $col)
-                                                        <span class="inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-800">
-                                                            {{ $col->table_column_name }}
-                                                        </span>
-                                                    @endforeach
-                                                    @if($mapping->columns->count() > 3)
-                                                        <span class="inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium bg-gray-200 text-gray-700">
-                                                            +{{ $mapping->columns->count() - 3 }} lagi
-                                                        </span>
-                                                    @endif
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    {{-- Download Button --}}
-                                    <div class="mt-3 pt-3 border-t border-purple-200">
-                                        <a href="{{ route('export.data', $mapping->id) }}" 
-                                           class="inline-flex items-center justify-center w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 border border-transparent rounded-lg font-bold text-xs text-white uppercase tracking-wide hover:from-green-700 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-green-300 transition-all duration-200 shadow-sm hover:shadow-md group">
-                                            <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                                            </svg>
-                                            Download Excel
-                                        </a>
-                                    </div>
-                                </div>
-                            @empty
-                                <div class="text-center py-12">
-                                    <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                    </svg>
-                                    <p class="mt-3 text-sm text-gray-500 font-medium">Belum ada format</p>
-                                    <p class="mt-1 text-xs text-gray-400">Buat format baru untuk memulai</p>
-                                </div>
-                            @endforelse
+                        <div class="p-4 max-h-[600px] overflow-y-auto custom-scrollbar">
+    @forelse ($mappings as $mapping)
+        <div class="mb-4 p-4 bg-gradient-to-br from-gray-50 to-purple-50 rounded-xl border border-purple-200 hover:border-purple-400 hover:shadow-lg transition-all duration-200 group">
+            <div class="flex items-start justify-between mb-3">
+                <div class="flex-1">
+                    <h4 class="font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors">
+                        {{ $mapping->description ?? $mapping->code }}
+                    </h4>
+                    <div class="space-y-2">
+                        <p class="text-xs text-gray-600 flex items-center">
+                            <svg class="w-3 h-3 mr-1.5 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>
+                            </svg>
+                            <span class="font-semibold">Code:</span> <span class="ml-1 font-mono">{{ $mapping->code }}</span>
+                        </p>
+                        <p class="text-xs text-gray-600 flex items-center">
+                            <svg class="w-3 h-3 mr-1.5 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"></path>
+                                <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"></path>
+                                <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"></path>
+                            </svg>
+                            <span class="font-semibold">Tabel:</span> <span class="ml-1 font-mono">{{ $mapping->table_name }}</span>
+                        </p>
+                        <div class="flex flex-wrap gap-1 mt-2">
+                            @foreach($mapping->columns->take(3) as $col)
+                                <span class="inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-800">
+                                    {{ $col->table_column_name }}
+                                </span>
+                            @endforeach
+                            @if($mapping->columns->count() > 3)
+                                <span class="inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium bg-gray-200 text-gray-700">
+                                    +{{ $mapping->columns->count() - 3 }} lagi
+                                </span>
+                            @endif
                         </div>
+                    </div>
+                </div>
+            </div>
+            
+            {{-- Action Buttons --}}
+            <div class="mt-3 pt-3 border-t border-purple-200 grid grid-cols-2 gap-2">
+                <a href="{{ route('mapping.view.data', $mapping->id) }}" 
+                   class="inline-flex items-center justify-center px-3 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 border border-transparent rounded-lg font-bold text-xs text-white uppercase tracking-wide hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all duration-200 shadow-sm hover:shadow-md group">
+                    <svg class="w-3.5 h-3.5 mr-1.5 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    Lihat Data
+                </a>
+                <a href="{{ route('export.data', $mapping->id) }}" 
+                   class="inline-flex items-center justify-center px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 border border-transparent rounded-lg font-bold text-xs text-white uppercase tracking-wide hover:from-green-700 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-green-300 transition-all duration-200 shadow-sm hover:shadow-md group">
+                    <svg class="w-3.5 h-3.5 mr-1.5 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    Download
+                </a>
+            </div>
+        </div>
+    @empty
+        <div class="text-center py-12">
+            <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <p class="mt-3 text-sm text-gray-500 font-medium">Belum ada format</p>
+            <p class="mt-1 text-xs text-gray-400">Buat format baru untuk memulai</p>
+        </div>
+    @endforelse
+</div>
                     </div>
                 </div>
             </div>

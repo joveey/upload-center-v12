@@ -20,8 +20,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    // Export route
     Route::get('/export/{mapping}', [App\Http\Controllers\ExportController::class, 'export'])
         ->name('export.data');
+    
+    // View data route - NEW
+    Route::get('/mapping/{mapping}/view', [MappingController::class, 'viewData'])
+        ->name('mapping.view.data');
 
     // Upload routes
     Route::middleware('can:upload data')->group(function () {
@@ -41,6 +47,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/register-format', [MappingController::class, 'processRegisterForm'])
             ->name('mapping.register.process');
     });
+
+    Route::get('/formats', [MappingController::class, 'index'])
+        ->name('formats.index');
 });
 
 require __DIR__.'/auth.php';
