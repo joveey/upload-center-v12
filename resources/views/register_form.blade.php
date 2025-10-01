@@ -39,7 +39,7 @@
                         
                         {{-- Error Messages --}}
                         @if ($errors->any())
-                            <div class="bg-red-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm animate-shake">
+                            <div class="bg-red-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm">
                                 <div class="flex items-start">
                                     <svg class="w-5 h-5 text-red-500 mr-3 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
@@ -52,6 +52,17 @@
                                             @endforeach
                                         </ul>
                                     </div>
+                                </div>
+                            </div>
+                        @endif
+
+                        @if(session('error'))
+                            <div class="bg-red-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm">
+                                <div class="flex items-start">
+                                    <svg class="w-5 h-5 text-red-500 mr-3 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <p class="text-red-700 text-sm font-medium">{{ session('error') }}</p>
                                 </div>
                             </div>
                         @endif
@@ -124,9 +135,23 @@
                                                         <input x-model="mapping.db_column" x-bind:id="'db_column_' + index" class="block w-full px-3 py-2 border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 rounded-lg shadow-sm font-mono text-sm transition-all duration-200" type="text" x-bind:name="'mappings[' + index + '][database_column]'" required placeholder="nama_produk"/>
                                                     </div>
                                                 </div>
-                                                <!-- Checkbox Kunci Unik -->
+                                                <!-- Checkbox Kunci Unik - FIXED VERSION -->
                                                 <div class="flex items-center space-x-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                                                    <input type="checkbox" x-model="mapping.is_unique" x-bind:id="'is_unique_' + index" x-bind:name="'mappings[' + index + '][is_unique_key]'" value="1" class="rounded border-amber-300 text-amber-600 shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200 focus:ring-opacity-50">
+                                                    <!-- Hidden input untuk memastikan value selalu terkirim -->
+                                                    <input 
+                                                        type="hidden" 
+                                                        x-bind:name="'mappings[' + index + '][is_unique_key]'" 
+                                                        value="0"
+                                                    >
+                                                    <!-- Checkbox actual -->
+                                                    <input 
+                                                        type="checkbox" 
+                                                        x-model="mapping.is_unique" 
+                                                        x-bind:id="'is_unique_' + index" 
+                                                        x-bind:name="'mappings[' + index + '][is_unique_key]'" 
+                                                        value="1" 
+                                                        class="rounded border-amber-300 text-amber-600 shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200 focus:ring-opacity-50"
+                                                    >
                                                     <label x-bind:for="'is_unique_' + index" class="text-sm font-semibold text-amber-800 cursor-pointer flex items-center flex-1">
                                                         <svg class="w-4 h-4 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
@@ -145,6 +170,8 @@
                                                             </div>
                                                         </div>
                                                     </div>
+                                                    <!-- Visual indicator when checked -->
+                                                    <span x-show="mapping.is_unique" class="text-xs text-green-600 font-bold">✓ Active</span>
                                                 </div>
                                             </div>
                                             <button type="button" @click="mappings.splice(index, 1)" x-show="mappings.length > 1" class="flex-shrink-0 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors duration-200 group">
@@ -254,4 +281,21 @@
             </div>
         </div>
     </div>
+
+    <!-- Debug Script (Remove in production) -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.querySelector('form');
+            
+            form?.addEventListener('submit', function(e) {
+                console.log('🚀 Form submitted!');
+                
+                const formData = new FormData(this);
+                console.log('📦 Form data:');
+                for (let [key, value] of formData.entries()) {
+                    console.log(`  ${key}: ${value}`);
+                }
+            });
+        });
+    </script>
 </x-app-layout>

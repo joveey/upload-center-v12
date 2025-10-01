@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
@@ -41,7 +42,7 @@ class MappingController extends Controller
             'mappings' => 'required|array|min:1',
             'mappings.*.excel_column' => 'required|string|distinct|max:10',
             'mappings.*.database_column' => ['required', 'string', 'distinct', 'regex:/^[a-z0-9_]+$/', Rule::notIn(['id'])],
-            'mappings.*.is_unique_key' => 'nullable',
+            'mappings.*.is_unique_key' => 'nullable|in:0,1,true,false',
         ], [
             'name.unique' => 'Nama format ini sudah digunakan.',
             'table_name.regex' => 'Nama tabel hanya boleh berisi huruf kecil, angka, dan underscore (_).',
@@ -59,13 +60,34 @@ class MappingController extends Controller
 
         DB::beginTransaction();
         try {
+            // Collect unique key columns
+            $uniqueKeyColumns = [];
+            foreach ($validated['mappings'] as $mapping) {
+                // Handle multiple possible values
+                $isUniqueKey = false;
+                if (isset($mapping['is_unique_key'])) {
+                    $value = $mapping['is_unique_key'];
+                    $isUniqueKey = ($value === '1' || $value === 1 || $value === 'true' || $value === true);
+                }
+                
+                if ($isUniqueKey) {
+                    $uniqueKeyColumns[] = $mapping['database_column'];
+                }
+            }
+            
             // Buat tabel baru
-            Schema::create($tableName, function (Blueprint $table) use ($validated) {
+            Schema::create($tableName, function (Blueprint $table) use ($validated, $uniqueKeyColumns, $tableName) {
                 $table->id();
                 foreach ($validated['mappings'] as $mapping) {
                     $table->text($mapping['database_column'])->nullable();
                 }
                 $table->timestamps();
+                
+                // Add unique constraint if there are unique key columns
+                if (!empty($uniqueKeyColumns)) {
+                    $table->unique($uniqueKeyColumns, $tableName . '_unique_key');
+                    Log::info("Unique constraint created on columns: " . implode(', ', $uniqueKeyColumns));
+                }
             });
             Log::info("Tabel '{$tableName}' berhasil dibuat.");
 
@@ -81,7 +103,12 @@ class MappingController extends Controller
 
             // Simpan mapping kolom dengan status is_unique_key
             foreach ($validated['mappings'] as $mapping) {
-                $isUniqueKey = isset($mapping['is_unique_key']) && $mapping['is_unique_key'] == '1';
+                // Handle multiple possible values for is_unique_key
+                $isUniqueKey = false;
+                if (isset($mapping['is_unique_key'])) {
+                    $value = $mapping['is_unique_key'];
+                    $isUniqueKey = ($value === '1' || $value === 1 || $value === 'true' || $value === true);
+                }
                 
                 MappingColumn::create([
                     'mapping_index_id' => $mappingIndex->id,
@@ -354,13 +381,13 @@ class MappingController extends Controller
     }
 
     /**
-     * Upload data - Process actual upload with upsert/strict mode
+     * Upload data - Process actual upload with STAGING TABLE pattern
      */
     public function uploadData(Request $request): JsonResponse
     {
-        Log::info('=== MEMULAI UPLOAD DATA ===');
+        Log::info('=== MEMULAI UPLOAD DATA DENGAN STAGING TABLE PATTERN ===');
         
-        DB::beginTransaction();
+        $stagingTableName = null;
         
         try {
             $validated = $request->validate([
@@ -379,23 +406,23 @@ class MappingController extends Controller
                 ]);
             }
 
-            $tableName = $mapping->table_name;
+            $mainTableName = $mapping->table_name;
             $headerRow = $mapping->header_row;
             $uploadMode = $validated['upload_mode'];
             
             Log::info('Mapping info:', [
                 'id' => $mapping->id,
                 'description' => $mapping->description,
-                'table_name' => $tableName,
+                'table_name' => $mainTableName,
                 'header_row' => $headerRow,
                 'upload_mode' => $uploadMode,
             ]);
 
-            if (!$tableName || !Schema::hasTable($tableName)) {
-                Log::error("Tabel tidak ditemukan: {$tableName}");
+            if (!$mainTableName || !Schema::hasTable($mainTableName)) {
+                Log::error("Tabel utama tidak ditemukan: {$mainTableName}");
                 return response()->json([
                     'success' => false,
-                    'message' => "Tabel '{$tableName}' tidak ditemukan di database."
+                    'message' => "Tabel '{$mainTableName}' tidak ditemukan di database."
                 ]);
             }
 
@@ -410,7 +437,6 @@ class MappingController extends Controller
             $mappingRules = $mapping->columns;
             
             if ($selectedColumns !== null && is_array($selectedColumns)) {
-                // Filter mapping rules based on selected columns
                 $mappingRules = $mappingRules->filter(function ($rule) use ($selectedColumns) {
                     return isset($selectedColumns[$rule->excel_column_index]) 
                         && !empty($selectedColumns[$rule->excel_column_index]);
@@ -492,48 +518,135 @@ class MappingController extends Controller
                 ]);
             }
 
-            // Process based on upload mode
-            if ($uploadMode === 'strict') {
-                // Strict mode: Delete all existing data, then insert
-                Log::info("Mode STRICT: Menghapus semua data dari tabel {$tableName}");
-                DB::table($tableName)->delete();
-                Log::info("Data lama berhasil dihapus.");
+            // ========================================
+            // STAGING TABLE PATTERN IMPLEMENTATION
+            // ========================================
+            
+            // Step 1: Create staging table with unique random name
+            $stagingTableName = 'staging_' . $mainTableName . '_' . Str::random(8);
+            Log::info("Step 1: Creating staging table: {$stagingTableName}");
+            
+            // Create staging table with identical structure INCLUDING unique constraint
+            Schema::create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns) {
+                $table->id();
                 
-                DB::table($tableName)->insert($dataToProcess);
-                Log::info("=== BERHASIL INSERT " . count($dataToProcess) . " ROWS (STRICT MODE) ===");
+                // Add all mapped columns as text/nullable (same as main table)
+                foreach ($columnMapping as $dbColumn) {
+                    $table->text($dbColumn)->nullable();
+                }
                 
-                $message = count($dataToProcess) . " baris data berhasil diimpor ke tabel '{$tableName}' (Mode Strict: Data lama dihapus).";
+                $table->timestamps();
                 
-            } else {
-                // Upsert mode: Update existing or insert new
-                Log::info("Mode UPSERT: Menggunakan kunci unik: " . implode(', ', $uniqueKeyColumns));
+                // Add unique constraint if there are unique key columns for UPSERT mode
+                if (!empty($uniqueKeyColumns)) {
+                    $table->unique($uniqueKeyColumns, 'staging_unique_key_' . Str::random(6));
+                    Log::info("Staging table unique constraint created on: " . implode(', ', $uniqueKeyColumns));
+                }
+            });
+            
+            Log::info("Staging table '{$stagingTableName}' created successfully");
+            
+            // Step 2: Insert all data into staging table
+            Log::info("Step 2: Inserting " . count($dataToProcess) . " rows into staging table");
+            DB::table($stagingTableName)->insert($dataToProcess);
+            Log::info("Data successfully inserted into staging table");
+            
+            // Step 3: Atomic transaction to sync from staging to main table
+            Log::info("Step 3: Starting atomic transaction to sync data");
+            
+            DB::beginTransaction();
+            
+            try {
+                if ($uploadMode === 'strict') {
+                    // STRICT MODE: Truncate main table, then copy all from staging
+                    Log::info("STRICT MODE: Truncating main table '{$mainTableName}'");
+                    DB::table($mainTableName)->truncate();
+                    
+                    Log::info("Copying all data from staging to main table");
+                    
+                    // Build column list for INSERT SELECT
+                    $columns = array_merge(['id'], array_values($columnMapping), ['created_at', 'updated_at']);
+                    $columnsList = implode(', ', array_map(fn($col) => '"' . $col . '"', $columns));
+                    
+                    // Execute INSERT INTO ... SELECT
+                    $sql = "INSERT INTO \"{$mainTableName}\" ({$columnsList}) 
+                            SELECT {$columnsList} FROM \"{$stagingTableName}\"";
+                    
+                    DB::statement($sql);
+                    
+                    Log::info("STRICT MODE: Successfully copied all data from staging to main table");
+                    $message = count($dataToProcess) . " baris data berhasil diimpor ke tabel '{$mainTableName}' (Mode Strict: Data lama dihapus).";
+                    
+                } else {
+                    // UPSERT MODE: Use ON CONFLICT DO UPDATE
+                    Log::info("UPSERT MODE: Using ON CONFLICT for unique keys: " . implode(', ', $uniqueKeyColumns));
+                    
+                    // Build columns list (excluding id for insert)
+                    $dataColumns = array_values($columnMapping);
+                    $allColumns = array_merge($dataColumns, ['created_at', 'updated_at']);
+                    
+                    // Build conflict target (unique key columns)
+                    $conflictTarget = implode(', ', array_map(fn($col) => '"' . $col . '"', $uniqueKeyColumns));
+                    
+                    // Build UPDATE SET clause (all columns except unique keys)
+                    $updateClauses = [];
+                    foreach ($allColumns as $col) {
+                        $updateClauses[] = "\"{$col}\" = EXCLUDED.\"{$col}\"";
+                    }
+                    $updateSet = implode(', ', $updateClauses);
+                    
+                    // Build column list for INSERT
+                    $columnsList = implode(', ', array_map(fn($col) => '"' . $col . '"', $allColumns));
+                    
+                    // Execute INSERT ... ON CONFLICT DO UPDATE
+                    $sql = "INSERT INTO \"{$mainTableName}\" ({$columnsList}) 
+                            SELECT {$columnsList} FROM \"{$stagingTableName}\"
+                            ON CONFLICT ({$conflictTarget}) DO UPDATE SET {$updateSet}";
+                    
+                    DB::statement($sql);
+                    
+                    Log::info("UPSERT MODE: Successfully synced data using ON CONFLICT");
+                    $message = count($dataToProcess) . " baris data berhasil diproses ke tabel '{$mainTableName}' (Mode Upsert).";
+                }
                 
-                DB::table($tableName)->upsert(
-                    $dataToProcess,
-                    $uniqueKeyColumns,
-                    array_keys($dataToProcess[0])
-                );
+                // Commit transaction
+                DB::commit();
+                Log::info("=== TRANSAKSI BERHASIL DI-COMMIT ===");
                 
-                Log::info("=== BERHASIL UPSERT " . count($dataToProcess) . " ROWS ===");
-                
-                $message = count($dataToProcess) . " baris data berhasil diproses ke tabel '{$tableName}' (Mode Upsert).";
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('=== TRANSAKSI DI-ROLLBACK ===');
+                Log::error('Sync error: ' . $e->getMessage());
+                throw $e; // Re-throw to outer catch block
             }
-
-            DB::commit();
-            Log::info("=== TRANSAKSI BERHASIL DI-COMMIT ===");
-
+            
+            // Step 4: Cleanup - Drop staging table
+            Log::info("Step 4: Cleanup - Dropping staging table '{$stagingTableName}'");
+            Schema::dropIfExists($stagingTableName);
+            Log::info("Staging table dropped successfully");
+            
             return response()->json([
                 'success' => true,
                 'message' => $message
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('=== TRANSAKSI DI-ROLLBACK ===');
+            Log::error('=== UPLOAD FAILED ===');
             Log::error('Upload error: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             Log::error('File: ' . $e->getFile());
             Log::error('Line: ' . $e->getLine());
+            
+            // Cleanup: Drop staging table if it exists
+            if ($stagingTableName && Schema::hasTable($stagingTableName)) {
+                Log::info("Emergency cleanup: Dropping staging table '{$stagingTableName}'");
+                try {
+                    Schema::dropIfExists($stagingTableName);
+                    Log::info("Staging table dropped in error cleanup");
+                } catch (\Exception $cleanupError) {
+                    Log::error("Failed to drop staging table in cleanup: " . $cleanupError->getMessage());
+                }
+            }
             
             return response()->json([
                 'success' => false,
