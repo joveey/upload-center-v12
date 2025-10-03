@@ -223,8 +223,8 @@ class MappingController extends Controller
             }
         }
         
-        // Paginate results
-        $data = $query->orderBy('id', 'desc')->paginate(50);
+        // Paginate results - order by ID ascending (smallest first)
+        $data = $query->orderBy('id', 'asc')->paginate(50);
 
         return view('view_data', [
             'mapping' => $mapping,
@@ -733,6 +733,18 @@ class MappingController extends Controller
             Log::info("Step 4: Cleanup - Dropping staging table '{$stagingTableName}'");
             Schema::dropIfExists($stagingTableName);
             Log::info("Staging table dropped successfully");
+            
+            // Step 5: Log the upload
+            \App\Models\UploadLog::create([
+                'user_id' => Auth::id(),
+                'division_id' => Auth::user()->division_id,
+                'mapping_index_id' => $mapping->id,
+                'file_name' => $request->file('data_file')->getClientOriginalName(),
+                'rows_imported' => count($dataToProcess),
+                'status' => 'success',
+                'error_message' => null,
+            ]);
+            Log::info("Upload log created successfully");
             
             return response()->json([
                 'success' => true,

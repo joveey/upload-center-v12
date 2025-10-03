@@ -20,8 +20,10 @@ class RegisteredUserController extends Controller
      */
     public function create(): View
     {
-        // Get all divisions untuk dropdown
-        $divisions = Division::orderBy('name')->get();
+        // Get all divisions untuk dropdown, exclude superuser divisions
+        $divisions = Division::where('is_super_user', false)
+            ->orderBy('name')
+            ->get();
         
         return view('auth.register', compact('divisions'));
     }
@@ -36,18 +38,26 @@ class RegisteredUserController extends Controller
         $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
-            'division_id' => ['required', 'exists:divisions,id'], // TAMBAHAN: Validasi division_id
+            'division_id' => ['required', 'exists:divisions,id'], 
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
+
+        // Prevent registration with superuser division
+        $division = Division::findOrFail($request->division_id);
+        if ($division->is_super_user) {
+            return back()->withErrors([
+                'division_id' => 'Tidak dapat mendaftar dengan divisi superuser. Silakan pilih divisi lain.'
+            ])->withInput();
+        }
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
-            'division_id' => $request->division_id, // TAMBAHAN: Simpan division_id
+            'division_id' => $request->division_id,
             'password' => Hash::make($request->password),
         ]);
 
-        // TAMBAHAN: Assign role default
+        // Assign role default
         $user->assignRole('division-user');
 
         event(new Registered($user));

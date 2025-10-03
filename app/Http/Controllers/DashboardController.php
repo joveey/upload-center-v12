@@ -23,16 +23,112 @@ class DashboardController extends Controller
     {
         $user = Auth::user();
         $mappings = collect();
+        $uploadStats = null;
+        $divisionUploadCounts = null;
 
         if ($user && $user->division_id) {
-            $mappings = MappingIndex::where('division_id', $user->division_id)
-                ->orderBy('description')
-                ->get();
+            // Check if user is superuser
+            if ($user->division->is_super_user) {
+                // Superuser can see all formats from all divisions
+                $mappings = MappingIndex::with('division')
+                    ->orderBy('description')
+                    ->get();
+                
+                // Get upload statistics for superuser
+                $uploadStats = $this->getUploadStatistics();
+                
+                // Get simple upload counts per division
+                $divisionUploadCounts = $this->getDivisionUploadCounts();
+            } else {
+                // Regular user only sees their division's formats
+                $mappings = MappingIndex::where('division_id', $user->division_id)
+                    ->orderBy('description')
+                    ->get();
+            }
         }
 
         return view('dashboard', [
             'mappings' => $mappings,
+            'uploadStats' => $uploadStats,
+            'divisionUploadCounts' => $divisionUploadCounts,
         ]);
+    }
+
+    /**
+     * Get total upload counts per division
+     */
+    private function getDivisionUploadCounts(): array
+    {
+        $divisions = \App\Models\Division::where('is_super_user', false)
+            ->orderBy('name')
+            ->get();
+        
+        $counts = [];
+        foreach ($divisions as $division) {
+            $count = \App\Models\UploadLog::where('division_id', $division->id)
+                ->where('status', 'success')
+                ->count();
+            
+            if ($count > 0) {
+                $counts[] = [
+                    'name' => $division->name,
+                    'count' => $count,
+                ];
+            }
+        }
+        
+        return $counts;
+    }
+
+    /**
+     * Get upload statistics for the last 4 weeks
+     */
+    private function getUploadStatistics(): array
+    {
+        $weeks = [];
+        $labels = [];
+        
+        // Generate last 4 weeks
+        for ($i = 3; $i >= 0; $i--) {
+            $weekStart = now()->subWeeks($i)->startOfWeek();
+            $weekEnd = now()->subWeeks($i)->endOfWeek();
+            $weeks[] = ['start' => $weekStart, 'end' => $weekEnd];
+            $labels[] = $weekStart->format('d M') . ' - ' . $weekEnd->format('d M');
+        }
+
+        // Get all divisions (exclude superuser)
+        $divisions = \App\Models\Division::where('is_super_user', false)->get();
+        
+        $datasets = [];
+        foreach ($divisions as $division) {
+            $data = [];
+            $hasData = false;
+            
+            foreach ($weeks as $week) {
+                // Count uploads for this division in this week
+                $count = \App\Models\UploadLog::where('division_id', $division->id)
+                    ->whereBetween('created_at', [$week['start'], $week['end']])
+                    ->count();
+                $data[] = $count;
+                
+                if ($count > 0) {
+                    $hasData = true;
+                }
+            }
+            
+            // Only include divisions that have upload data
+            if ($hasData) {
+                $datasets[] = [
+                    'label' => $division->name,
+                    'data' => $data,
+                ];
+            }
+        }
+
+        return [
+            'labels' => $labels,
+            'datasets' => $datasets,
+        ];
     }
 
     /**

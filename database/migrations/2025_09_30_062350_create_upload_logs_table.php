@@ -13,7 +13,16 @@ return new class extends Migration
     {
         Schema::create('upload_logs', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('division_id')->constrained()->onDelete('cascade');
+            $table->foreignId('mapping_index_id')->constrained()->onDelete('cascade');
+            $table->string('file_name');
+            $table->integer('rows_imported')->default(0);
+            $table->string('status')->default('success'); // success, failed
+            $table->text('error_message')->nullable();
             $table->timestamps();
+            
+            $table->index(['division_id', 'created_at']);
         });
     }
 

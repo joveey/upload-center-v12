@@ -74,32 +74,84 @@
                 @endif
             </div>
 
-            {{-- SuperUser Chart --}}
-            @if(auth()->user()->division->is_super_user && isset($uploadStats))
-            <div class="mb-6">
-                <div class="bg-white overflow-hidden shadow-2xl rounded-2xl border border-gray-100">
-                    <div class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-8 py-6">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-xl p-3 shadow-lg">
-                                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                                </svg>
+            {{-- SuperUser Statistics --}}
+            @if(auth()->user()->division->is_super_user)
+            <div class="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {{-- Upload Count per Division --}}
+                @if(isset($divisionUploadCounts) && count($divisionUploadCounts) > 0)
+                <div class="lg:col-span-1">
+                    <div class="bg-white overflow-hidden shadow-xl rounded-2xl border border-gray-100 h-full">
+                        <div class="bg-gradient-to-r from-blue-500 to-cyan-500 px-6 py-4">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-xl p-2 shadow-lg">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <h3 class="text-base font-bold text-white">
+                                        Total Upload
+                                    </h3>
+                                    <p class="text-blue-100 text-xs mt-0.5">
+                                        Per Divisi
+                                    </p>
+                                </div>
                             </div>
-                            <div class="ml-4">
-                                <h3 class="text-xl font-bold text-white">
-                                    Statistik Upload
-                                </h3>
-                                <p class="text-indigo-100 text-sm mt-1">
-                                    Data upload 4 minggu terakhir
-                                </p>
+                        </div>
+                        
+                        <div class="p-6">
+                            <div class="space-y-3">
+                                @foreach($divisionUploadCounts as $divCount)
+                                <div class="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg border border-blue-100 hover:shadow-md transition-shadow duration-200">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center shadow-sm">
+                                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                            </svg>
+                                        </div>
+                                        <span class="font-semibold text-gray-800">{{ $divCount['name'] }}</span>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-sm">
+                                            {{ $divCount['count'] }}
+                                        </span>
+                                    </div>
+                                </div>
+                                @endforeach
                             </div>
                         </div>
                     </div>
-                    
-                    <div class="p-8">
-                        <canvas id="uploadChart" height="80"></canvas>
+                </div>
+                @endif
+                
+                {{-- Chart --}}
+                @if(isset($uploadStats))
+                <div class="lg:col-span-2">
+                    <div class="bg-white overflow-hidden shadow-xl rounded-2xl border border-gray-100 h-full">
+                        <div class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-6 py-4">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-xl p-2 shadow-lg">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <h3 class="text-base font-bold text-white">
+                                        Tren Upload
+                                    </h3>
+                                    <p class="text-indigo-100 text-xs mt-0.5">
+                                        4 minggu terakhir
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="p-6">
+                            <canvas id="uploadChart" height="80"></canvas>
+                        </div>
                     </div>
                 </div>
+                @endif
             </div>
             @endif
 
