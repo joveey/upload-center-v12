@@ -41,14 +41,14 @@ class MappingController extends Controller
             'header_row' => 'required|integer|min:1',
             'mappings' => 'required|array|min:1',
             'mappings.*.excel_column' => 'required|string|distinct|max:10',
-            'mappings.*.database_column' => ['required', 'string', 'distinct', 'regex:/^[a-z0-9_]+$/', Rule::notIn(['id'])],
+            'mappings.*.database_column' => ['required', 'string', 'distinct', 'regex:/^[a-z0-9_]+$/', Rule::notIn(['id','period_date'])],
             'mappings.*.is_unique_key' => 'nullable|in:0,1,true,false',
         ], [
             'name.unique' => 'Nama format ini sudah digunakan.',
             'table_name.regex' => 'Nama tabel hanya boleh berisi huruf kecil, angka, dan underscore (_).',
             'table_name.unique' => 'Nama tabel ini sudah digunakan oleh format lain.',
             'mappings.*.database_column.regex' => 'Nama kolom hanya boleh berisi huruf kecil, angka, dan underscore (_).',
-            'mappings.*.database_column.not_in' => 'Nama kolom tidak boleh "id". Kolom "id" akan dibuat secara otomatis.',
+            'mappings.*.database_column.not_in' => 'Nama kolom tidak boleh "id" atau "period_date". Kolom tersebut akan dibuat secara otomatis.',
         ]);
 
         Log::info('Validasi berhasil.', $validated);
@@ -81,6 +81,8 @@ class MappingController extends Controller
                 foreach ($validated['mappings'] as $mapping) {
                     $table->text($mapping['database_column'])->nullable();
                 }
+                $table->date('period_date')->index();
+                $table->boolean('is_active')->default(true)->index();
                 $table->timestamps();
                 
                 // Add unique constraint if there are unique key columns
@@ -89,7 +91,7 @@ class MappingController extends Controller
                     Log::info("Unique constraint created on columns: " . implode(', ', $uniqueKeyColumns));
                 }
             });
-            Log::info("Tabel '{$tableName}' berhasil dibuat.");
+            Log::info("Tabel '{$tableName}' berhasil dibuat dengan kolom period_date.");
 
             // Simpan format ke mapping_indices
             $mappingIndex = MappingIndex::create([
@@ -126,8 +128,7 @@ class MappingController extends Controller
             Log::info("Pemetaan kolom berhasil disimpan.");
 
             DB::commit();
-            return redirect()->route('dashboard')->with('success', "Format '{$validated['name']}' berhasil disimpan dan tabel '{$tableName}' telah dibuat!");
-
+            return redirect()->route('dashboard')->with('success', "Format '{$validated['name']}' berhasil disimpan dan tabel '{$tableName}' telah dibuat dengan dukungan period_date!");
         } catch (\Exception $e) {
             DB::rollBack();
             Schema::dropIfExists($tableName);
@@ -331,11 +332,11 @@ class MappingController extends Controller
         $html .= '<input type="radio" name="upload_mode" value="strict" class="mt-1 rounded-full border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50">';
         $html .= '<div class="ml-3">';
         $html .= '<div class="flex items-center">';
-        $html .= '<span class="font-semibold text-gray-900">Strict (Hapus Semua & Insert Baru)</span>';
+        $html .= '<span class="font-semibold text-gray-900">Strict (Replace by Period)</span>';
         $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Hati-hati</span>';
         $html .= '</div>';
-        $html .= '<p class="text-sm text-gray-600 mt-1">Hapus semua data lama di tabel, lalu insert semua data baru dari file</p>';
-        $html .= '<p class="text-xs text-red-600 mt-1 font-medium">⚠️ Semua data lama akan dihapus permanen!</p>';
+        $html .= '<p class="text-sm text-gray-600 mt-1">Hapus data dengan period hari ini, lalu insert semua data baru dari file</p>';
+        $html .= '<p class="text-xs text-red-600 mt-1 font-medium">⚠️ Data period hari ini akan dihapus dan diganti dengan data baru!</p>';
         $html .= '</div>';
         $html .= '</label>';
         
@@ -492,6 +493,10 @@ class MappingController extends Controller
                 'selected_columns' => ['nullable', 'string'],
                 'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
             ]);
+            
+            // Automatically use today's date as period_date
+            $periodDate = now()->toDateString();
+            Log::info("Menggunakan period_date: {$periodDate}");
 
             $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
             
@@ -584,7 +589,7 @@ class MappingController extends Controller
                     $rowNumber++;
                     continue;
                 }
-
+                
                 $rowData = [];
                 
                 // Map each Excel column to database column
@@ -597,6 +602,8 @@ class MappingController extends Controller
                 }
 
                 if (!empty($rowData)) {
+                    // Add period_date, created_at, and updated_at
+                    $rowData['period_date'] = $periodDate;
                     $rowData['created_at'] = now();
                     $rowData['updated_at'] = now();
                     $dataToProcess[] = $rowData;
@@ -631,6 +638,8 @@ class MappingController extends Controller
                     $table->text($dbColumn)->nullable();
                 }
                 
+                $table->date('period_date')->nullable();
+
                 $table->timestamps();
                 
                 // Add unique constraint if there are unique key columns for UPSERT mode
@@ -654,24 +663,25 @@ class MappingController extends Controller
             
             try {
                 if ($uploadMode === 'strict') {
-                    // STRICT MODE: Truncate main table, then copy all from staging
-                    Log::info("STRICT MODE: Truncating main table '{$mainTableName}'");
-                    DB::table($mainTableName)->truncate();
+                    // STRICT MODE: Delete data with same period_date, then insert all from staging
+                    // Using atomic operation to minimize blank data window
+                    Log::info("STRICT MODE: Deleting data with period_date = '{$periodDate}' from main table '{$mainTableName}'");
                     
-                    Log::info("Copying all data from staging to main table");
-                    
-                    // Build column list for INSERT SELECT
-                    $columns = array_merge(['id'], array_values($columnMapping), ['created_at', 'updated_at']);
+                    // Build column list for INSERT SELECT (excluding id to let it auto-increment)
+                    $columns = array_merge(array_values($columnMapping), ['period_date', 'created_at', 'updated_at']);
                     $columnsList = implode(', ', array_map(fn($col) => '"' . $col . '"', $columns));
                     
-                    // Execute INSERT INTO ... SELECT
+                    // Execute DELETE and INSERT in single atomic transaction
+                    // This minimizes the time window where data might appear blank
+                    DB::statement("DELETE FROM \"{$mainTableName}\" WHERE period_date = ?", [$periodDate]);
+                    
                     $sql = "INSERT INTO \"{$mainTableName}\" ({$columnsList}) 
                             SELECT {$columnsList} FROM \"{$stagingTableName}\"";
                     
                     DB::statement($sql);
                     
-                    Log::info("STRICT MODE: Successfully copied all data from staging to main table");
-                    $message = count($dataToProcess) . " baris data berhasil diimpor ke tabel '{$mainTableName}' (Mode Strict: Data lama dihapus).";
+                    Log::info("STRICT MODE: Successfully replaced data for period {$periodDate}");
+                    $message = count($dataToProcess) . " baris data berhasil diimpor ke tabel '{$mainTableName}' (Mode Strict: Data period {$periodDate} di-replace).";
                     
                 } else {
                     // UPSERT MODE: Use ON CONFLICT DO UPDATE
@@ -679,16 +689,19 @@ class MappingController extends Controller
                     
                     // Build columns list (excluding id for insert)
                     $dataColumns = array_values($columnMapping);
-                    $allColumns = array_merge($dataColumns, ['created_at', 'updated_at']);
+                    $allColumns = array_merge($dataColumns, ['period_date', 'created_at', 'updated_at']);
                     
                     // Build conflict target (unique key columns)
                     $conflictTarget = implode(', ', array_map(fn($col) => '"' . $col . '"', $uniqueKeyColumns));
                     
-                    // Build UPDATE SET clause (all columns except unique keys)
+                    // Build UPDATE SET clause (update data columns and updated_at, but NOT period_date and created_at)
+                    // period_date should remain as the original entry date, not be updated
                     $updateClauses = [];
-                    foreach ($allColumns as $col) {
+                    foreach ($dataColumns as $col) {
                         $updateClauses[] = "\"{$col}\" = EXCLUDED.\"{$col}\"";
                     }
+                    // Only update updated_at, keep period_date and created_at from original record
+                    $updateClauses[] = "\"updated_at\" = EXCLUDED.\"updated_at\"";
                     $updateSet = implode(', ', $updateClauses);
                     
                     // Build column list for INSERT
@@ -701,8 +714,8 @@ class MappingController extends Controller
                     
                     DB::statement($sql);
                     
-                    Log::info("UPSERT MODE: Successfully synced data using ON CONFLICT");
-                    $message = count($dataToProcess) . " baris data berhasil diproses ke tabel '{$mainTableName}' (Mode Upsert).";
+                    Log::info("UPSERT MODE: Successfully synced data using ON CONFLICT (period_date preserved for existing records)");
+                    $message = count($dataToProcess) . " baris data berhasil diproses ke tabel '{$mainTableName}' (Mode Upsert: period_date tetap untuk data yang sudah ada).";
                 }
                 
                 // Commit transaction

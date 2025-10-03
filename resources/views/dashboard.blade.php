@@ -18,7 +18,7 @@
                     Kelola dan unggah data Excel dengan mudah
                 @endif
             </p>
-        </div>
+        </div>  
     </div>
     @can('register format')
         <a href="{{ route('mapping.register.form') }}">
@@ -154,6 +154,7 @@
                         @endif
                     </div>
 
+                    
                     <div>
                         <label for="data_file" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
                             <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,7 +162,7 @@
                             </svg>
                             File Excel
                         </label>
-                        <div class="mt-1 flex justify-center px-6 pt-6 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-blue-400 transition-colors duration-200 bg-gray-50">
+                        <div id="drop-zone" class="mt-1 flex justify-center px-6 pt-6 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-blue-400 transition-colors duration-200 bg-gray-50">
                             <div class="space-y-2 text-center">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                                     <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -425,7 +426,9 @@
         document.addEventListener('DOMContentLoaded', function() {
             const fileInput = document.getElementById('data_file');
             const fileName = document.getElementById('file-name');
+            const dropZone = document.getElementById('drop-zone');
             
+            // Handle file input change
             fileInput.addEventListener('change', function() {
                 if (this.files[0]) {
                     fileName.textContent = '📎 ' + this.files[0].name;
@@ -434,6 +437,80 @@
                     fileName.classList.add('hidden');
                 }
             });
+
+            // Drag and Drop functionality
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            // Highlight drop zone when dragging over it
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, unhighlight, false);
+            });
+
+            function highlight(e) {
+                dropZone.classList.add('border-blue-500', 'bg-blue-50', 'border-4');
+                dropZone.classList.remove('border-gray-300', 'bg-gray-50');
+            }
+
+            function unhighlight(e) {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'border-4');
+                dropZone.classList.add('border-gray-300', 'bg-gray-50');
+            }
+
+            // Handle dropped files
+            dropZone.addEventListener('drop', handleDrop, false);
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+
+                if (files.length > 0) {
+                    const file = files[0];
+                    
+                    // Check file type
+                    const validTypes = [
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+                        'application/vnd.ms-excel' // .xls
+                    ];
+                    
+                    if (!validTypes.includes(file.type) && !file.name.match(/\.(xlsx|xls)$/i)) {
+                        alert('❌ File harus berformat Excel (.xlsx atau .xls)');
+                        return;
+                    }
+
+                    // Check file size (10MB)
+                    if (file.size > 10 * 1024 * 1024) {
+                        alert('❌ Ukuran file maksimal 10MB');
+                        return;
+                    }
+
+                    // Set file to input
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    fileInput.files = dataTransfer.files;
+
+                    // Show file name
+                    fileName.textContent = '📎 ' + file.name;
+                    fileName.classList.remove('hidden');
+
+                    // Visual feedback
+                    dropZone.classList.add('border-green-500', 'bg-green-50');
+                    setTimeout(() => {
+                        dropZone.classList.remove('border-green-500', 'bg-green-50');
+                        dropZone.classList.add('border-gray-300', 'bg-gray-50');
+                    }, 1000);
+                }
+            }
 
             const previewButton = document.getElementById('previewButton');
             const confirmUpload = document.getElementById('confirmUpload');

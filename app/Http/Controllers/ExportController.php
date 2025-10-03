@@ -15,7 +15,7 @@ use PhpOffice\PhpSpreadsheet\Style\Font;
 
 class ExportController extends Controller
 {
-    public function export($mappingId)
+    public function export(Request $request, $mappingId)
     {
         $user = Auth::user(); 
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
@@ -42,7 +42,19 @@ class ExportController extends Controller
             return back()->with('error', 'Konfigurasi mapping tidak sesuai dengan skema tabel. Tidak ada kolom valid yang bisa diexport.');
         }
 
-        $query = DB::table($tableName)->select($validColumns);
+        // Include period_date, created_at, updated_at in select if they exist
+        $selectColumns = $validColumns;
+        if (in_array('period_date', $actualTableColumns)) {
+            $selectColumns[] = 'period_date';
+        }
+        if (in_array('created_at', $actualTableColumns)) {
+            $selectColumns[] = 'created_at';
+        }
+        if (in_array('updated_at', $actualTableColumns)) {
+            $selectColumns[] = 'updated_at';
+        }
+
+        $query = DB::table($tableName)->select($selectColumns);
         
         if (!$user->hasRole('super-admin')) {
             if (in_array('division_id', $actualTableColumns)) {
@@ -50,6 +62,11 @@ class ExportController extends Controller
             }
         }
         
+        // TAMBAHAN: Filter by period if provided
+        if ($request->has('period_date') && $request->period_date && in_array('period_date', $actualTableColumns)) {
+            $query->where('period_date', $request->period_date);
+        }
+
         $data = $query->get();
 
         if ($data->isEmpty()) {
@@ -67,18 +84,39 @@ class ExportController extends Controller
         $row = 1;
         
         // ===== ADD HEADER ROW =====
-        $col = 1;
+        $colIndex = 1;
         foreach (array_keys($columnMapping) as $excelCol) {
             $dbColumn = $columnMapping[$excelCol];
             
             // Write header (using database column name or you can customize)
             $headerText = ucwords(str_replace('_', ' ', $dbColumn));
             $sheet->setCellValue($excelCol . $row, $headerText);
-            $col++;
+            $colIndex++;
         }
         
+        // Add additional columns (period_date, created_at, updated_at)
+        if (in_array('period_date', $actualTableColumns)) {
+            $col = $this->getColumnLetter($colIndex);
+            $sheet->setCellValue($col . $row, 'Period Date');
+            $colIndex++;
+        }
+        
+        if (in_array('created_at', $actualTableColumns)) {
+            $col = $this->getColumnLetter($colIndex);
+            $sheet->setCellValue($col . $row, 'Created At');
+            $colIndex++;
+        }
+        
+        if (in_array('updated_at', $actualTableColumns)) {
+            $col = $this->getColumnLetter($colIndex);
+            $sheet->setCellValue($col . $row, 'Updated At');
+            $colIndex++;
+        }
+
         // Style header row
-        $headerRange = 'A1:' . $this->getColumnLetter(count($columnMapping)) . '1';
+        $headerEndCol = $this->getColumnLetter($colIndex - 1);
+
+        $headerRange = 'A1:' . $headerEndCol . '1';
         $sheet->getStyle($headerRange)->applyFromArray([
             'font' => [
                 'bold' => true,
@@ -105,22 +143,52 @@ class ExportController extends Controller
         
         // ===== ADD DATA ROWS =====
         foreach ($data as $item) {
-            $col = 1;
+            $colIndex = 1;
+            
+            // Add mapped columns data
             foreach (array_keys($columnMapping) as $excelCol) {
                 $dbColumn = $columnMapping[$excelCol];
                 $value = $item->{$dbColumn} ?? '';
                 $sheet->setCellValue($excelCol . $row, $value);
-                $col++;
+                $colIndex++;
             }
+
+            // Add additional columns data
+            if (in_array('period_date', $actualTableColumns)) {
+                $col = $this->getColumnLetter($colIndex);
+                $sheet->setCellValue($col . $row, $item->period_date ?? '');
+                $colIndex++;
+            }
+            
+            if (in_array('created_at', $actualTableColumns)) {
+                $col = $this->getColumnLetter($colIndex);
+                $sheet->setCellValue($col . $row, $item->created_at ?? '');
+                $colIndex++;
+            }
+            
+            if (in_array('updated_at', $actualTableColumns)) {
+                $col = $this->getColumnLetter($colIndex);
+                $sheet->setCellValue($col . $row, $item->updated_at ?? '');
+                $colIndex++;
+            }
+
             $row++;
         }
 
         // Apply borders to all data
-        $dataRange = 'A1:' . $this->getColumnLetter(count($columnMapping)) . ($row - 1);
+        $dataEndCol = $this->getColumnLetter($colIndex - 1);
+
+        $dataRange = 'A1:' . $dataEndCol . ($row - 1);
         $sheet->getStyle($dataRange)
             ->getBorders()
             ->getAllBorders()
             ->setBorderStyle(Border::BORDER_THIN);
+
+            // Add period to filename if filtered
+        $periodSuffix = '';
+        if ($request->has('period_date') && $request->period_date) {
+            $periodSuffix = '_period_' . $request->period_date;
+        }
 
         $fileName = $mapping->code . '_' . date('Y-m-d_His') . '.xlsx';
 
