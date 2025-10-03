@@ -478,6 +478,84 @@ class MappingController extends Controller
     }
 
     /**
+     * Convert Excel date serial number to readable date format
+     * Excel stores dates as numbers (days since 1900-01-01)
+     * Also handles string dates like DD/MM/YYYY or DD-MM-YYYY
+     */
+    private function convertExcelDate($value)
+    {
+        // If value is null or empty, return as is
+        if ($value === null || $value === '') {
+            return $value;
+        }
+
+        // If value is already in YYYY-MM-DD format, return as is
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return $value;
+        }
+
+        // Try to parse string dates in DD/MM/YYYY or DD-MM-YYYY format
+        if (is_string($value)) {
+            // Match DD/MM/YYYY or D/M/YYYY (e.g., 26/12/2025, 6/5/2020)
+            if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $value, $matches)) {
+                try {
+                    $day = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
+                    $month = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
+                    $year = $matches[3];
+                    
+                    // Validate date
+                    if (checkdate($month, $day, $year)) {
+                        return "{$year}-{$month}-{$day}";
+                    }
+                } catch (\Exception $e) {
+                    Log::warning("Failed to parse date string: {$value}");
+                }
+            }
+            
+            // Match DD-MM-YYYY or D-M-YYYY (e.g., 26-12-2025, 6-5-2020)
+            if (preg_match('/^(\d{1,2})-(\d{1,2})-(\d{4})$/', $value, $matches)) {
+                try {
+                    $day = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
+                    $month = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
+                    $year = $matches[3];
+                    
+                    // Validate date
+                    if (checkdate($month, $day, $year)) {
+                        return "{$year}-{$month}-{$day}";
+                    }
+                } catch (\Exception $e) {
+                    Log::warning("Failed to parse date string: {$value}");
+                }
+            }
+        }
+
+        // Check if value is a numeric Excel date serial number
+        // Excel dates start from 1 (1900-01-01) but we use 18264 (1950) as minimum
+        // to avoid converting small IDs (1-18263) to dates
+        // Range: 18264 (1950-01-01) to 60000 (2064-03-01)
+        // This covers birth dates from 1950 onwards and business dates
+        if (is_numeric($value) && $value >= 18264 && $value <= 60000) {
+            try {
+                // Excel's epoch starts at 1900-01-01, but has a leap year bug
+                // Days are counted from December 30, 1899
+                $unixTimestamp = ($value - 25569) * 86400;
+                
+                // Convert to Carbon/DateTime
+                $date = \Carbon\Carbon::createFromTimestamp($unixTimestamp);
+                
+                // Return in YYYY-MM-DD format
+                return $date->format('Y-m-d');
+            } catch (\Exception $e) {
+                Log::warning("Failed to convert Excel date: {$value}, Error: " . $e->getMessage());
+                return $value;
+            }
+        }
+
+        // Return value as is if not a date
+        return $value;
+    }
+
+    /**
      * Upload data - Process actual upload with STAGING TABLE pattern
      */
     public function uploadData(Request $request): JsonResponse
@@ -559,12 +637,10 @@ class MappingController extends Controller
             
             Log::info('Unique key columns:', $uniqueKeyColumns);
 
-            // Validate upsert mode has unique keys
+            // If upsert mode but no unique keys, switch to strict mode automatically
             if ($uploadMode === 'upsert' && empty($uniqueKeyColumns)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Mode Upsert memerlukan minimal satu kolom yang ditandai sebagai kunci unik. Silakan pilih mode Strict atau atur kunci unik pada format.'
-                ]);
+                Log::warning('Upsert mode selected but no unique keys defined. Switching to strict mode.');
+                $uploadMode = 'strict';
             }
 
             // Create mapping array: excel_column_index => table_column_name
@@ -596,6 +672,10 @@ class MappingController extends Controller
                 foreach ($columnMapping as $excelColumn => $dbColumn) {
                     $columnIndex = ord(strtoupper($excelColumn)) - ord('A');
                     $value = $row[$columnIndex] ?? null;
+                    
+                    // Convert Excel date serial number to readable date format
+                    $value = $this->convertExcelDate($value);
+                    
                     $rowData[$dbColumn] = $value;
                     
                     Log::debug("Row {$rowNumber}: Col {$excelColumn}(idx:{$columnIndex}) -> {$dbColumn} = " . var_export($value, true));
