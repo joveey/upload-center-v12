@@ -21,8 +21,8 @@ return new class extends Migration
             $table->string('status')->default('success'); // success, failed
             $table->text('error_message')->nullable();
             $table->timestamps();
-            
             $table->index(['division_id', 'created_at']);
+
         });
     }
 
