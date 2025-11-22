@@ -13,8 +13,11 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // [PERBAIKAN] Hapus tanda komentar di baris ini
-        $this->call(RolesAndPermissionsSeeder::class);
+        $this->call([
+            RolesAndPermissionsSeeder::class,
+            TestUsersSeeder::class,
+            SuperUserSeeder::class,
+        ]);
 
         // User::factory(10)->create();
 

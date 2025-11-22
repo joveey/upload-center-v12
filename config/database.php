@@ -97,7 +97,7 @@ return [
             'sslmode' => 'prefer',
         ],
 
-        'sqlsrv' => [
+            'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', 'localhost'),
@@ -108,9 +108,13 @@ return [
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            // 'encrypt' => env('DB_ENCRYPT', 'yes'),
-            // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
+            'encrypt' => env('DB_ENCRYPT', 'yes'),
+            'trust_server_certificate' => env('DB_TRUST_SERVER_CERT', false),
+            'options' => extension_loaded('sqlsrv') ? array_filter([
+                // Add SQLSRV-specific PDO attributes here when needed.
+            ]) : [],
         ],
+
 
     ],
 
@@ -149,6 +153,7 @@ return [
             'cluster' => env('REDIS_CLUSTER', 'redis'),
             'prefix' => env('REDIS_PREFIX', Str::slug(env('APP_NAME', 'laravel'), '_').'_database_'),
             'persistent' => env('REDIS_PERSISTENT', false),
+            'TrustServerCertificate' => true,
         ],
 
         'default' => [

@@ -14,25 +14,20 @@ class SuperUserSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->command->info('Creating SuperUser division and account...');
-
         // Create SuperUser division if not exists
         $superDivision = Division::firstOrCreate(
             ['name' => 'SuperUser'],
-            [
-                'description' => 'Super Administrator Division',
-                'is_super_user' => true,
-            ]
+            ['is_super_user' => true]
         );
 
-        $this->command->info('✓ SuperUser division created/found');
+        $this->command->info("SuperUser division created/found: {$superDivision->name}");
 
-        // Create SuperUser account if not exists
+        // Create SuperUser account
         $superUser = User::firstOrCreate(
-            ['email' => 'superuser@test.com'],
+            ['email' => 'admin@company.com'],
             [
                 'name' => 'Super Administrator',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('Admin123!@#'),
                 'division_id' => $superDivision->id,
                 'email_verified_at' => now(),
             ]
@@ -41,25 +36,17 @@ class SuperUserSeeder extends Seeder
         // Assign super-admin role
         if (!$superUser->hasRole('super-admin')) {
             $superUser->assignRole('super-admin');
+            $this->command->info("Role 'super-admin' assigned to {$superUser->email}");
         }
 
-        $this->command->info('✓ SuperUser account created/updated');
-
-        // Display credentials
-        $this->command->newLine();
-        $this->command->table(
-            ['Name', 'Email', 'Password', 'Division'],
-            [
-                [
-                    $superUser->name,
-                    $superUser->email,
-                    'password',
-                    $superDivision->name,
-                ],
-            ]
-        );
-
-        $this->command->info('✅ SuperUser created successfully!');
-        $this->command->warn('⚠️  SuperUser can only be created via seeding, not through registration.');
+        $this->command->info('');
+        $this->command->info('===========================================');
+        $this->command->info('SuperUser Account Created Successfully!');
+        $this->command->info('===========================================');
+        $this->command->info("Email: {$superUser->email}");
+        $this->command->info('Password: Admin123!@#');
+        $this->command->info('');
+        $this->command->warn('⚠️  IMPORTANT: Change this password immediately after first login!');
+        $this->command->info('===========================================');
     }
 }

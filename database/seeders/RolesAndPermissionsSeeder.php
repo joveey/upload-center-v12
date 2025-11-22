@@ -14,20 +14,30 @@ class RolesAndPermissionsSeeder extends Seeder
      */
     public function run(): void
     {
-        // Reset cached roles and permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // create permissions
-        Permission::create(['name' => 'register format']);
-        Permission::create(['name' => 'upload data']);
+        $guard = config('auth.defaults.guard', 'web');
 
-        // create roles and assign existing permissions
-        $divisionUserRole = Role::create(['name' => 'division-user']);
-        $divisionUserRole->givePermissionTo('register format');
-        $divisionUserRole->givePermissionTo('upload data');
+        $registerFormat = Permission::firstOrCreate([
+            'name' => 'register format',
+            'guard_name' => $guard,
+        ]);
 
-        // [PERBAIKAN] Menghapus 's' dari 'name's'
-        $superAdminRole = Role::create(['name' => 'super-admin']);
+        $uploadData = Permission::firstOrCreate([
+            'name' => 'upload data',
+            'guard_name' => $guard,
+        ]);
+
+        $divisionUserRole = Role::firstOrCreate([
+            'name' => 'division-user',
+            'guard_name' => $guard,
+        ]);
+        $divisionUserRole->givePermissionTo([$registerFormat, $uploadData]);
+
+        $superAdminRole = Role::firstOrCreate([
+            'name' => 'super-admin',
+            'guard_name' => $guard,
+        ]);
         $superAdminRole->givePermissionTo(Permission::all());
     }
 }
