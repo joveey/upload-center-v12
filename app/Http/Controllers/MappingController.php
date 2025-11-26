@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
-use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class MappingController extends Controller
 {
@@ -243,6 +243,7 @@ class MappingController extends Controller
             $validated = $request->validate([
                 'data_file' => ['required', File::types(['xlsx', 'xls'])],
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
+                'sheet_name' => ['nullable', 'string'],
             ]);
 
             $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
@@ -254,25 +255,49 @@ class MappingController extends Controller
                 ]);
             }
 
-            // Baca file Excel
-            $excelData = Excel::toCollection(null, $request->file('data_file'))->first();
-            
-            // Ambil header row
-            $headerRow = $mapping->header_row - 1;
-            $headers = $excelData->get($headerRow);
-            
-            // Ambil preview data (5 rows setelah header)
-            $previewRows = $excelData->slice($headerRow + 1, 5);
-            
-            // Get mapping rules
-            $mappingRules = $mapping->columns;
+            $headerRowIndex = max(0, $mapping->header_row - 1);
+
+            // Baca semua sheet lalu pilih yang sesuai
+            $sheets = $this->loadSheets($request->file('data_file'));
+
+            if (empty($sheets)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File Excel tidak memiliki sheet yang bisa dibaca.'
+                ]);
+            }
+
+            $expectedHeaders = $this->buildExpectedHeaders($mapping->columns);
+            $selection = $this->determineSheetSelection(
+                $sheets,
+                $expectedHeaders,
+                $headerRowIndex,
+                $validated['sheet_name'] ?? null
+            );
+
+            if ($selection['sheet']['rows']->count() <= $headerRowIndex) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Sheet '{$selection['sheet_name']}' tidak memiliki baris header ke-{$mapping->header_row}."
+                ]);
+            }
+
+            $headers = $selection['sheet']['rows']->get($headerRowIndex, collect());
+            if (!$headers instanceof \Illuminate\Support\Collection) {
+                $headers = collect($headers ?? []);
+            }
+
+            $previewRows = $selection['sheet']['rows']->slice($headerRowIndex + 1, 5);
 
             // Generate HTML
-            $html = $this->generatePreviewHtml($mapping, $headers, $previewRows, $mappingRules);
+            $html = $this->generatePreviewHtml($mapping, $headers, $previewRows, $mapping->columns);
 
             return response()->json([
                 'success' => true,
-                'html' => $html
+                'html' => $html,
+                'sheets' => $selection['matches'],
+                'selected_sheet' => $selection['sheet_name'],
+                'auto_selected' => $selection['auto_selected'],
             ]);
 
         } catch (\Exception $e) {
@@ -465,6 +490,114 @@ class MappingController extends Controller
     }
 
     /**
+     * Build normalized expected headers from mapping rules.
+     */
+    private function buildExpectedHeaders($mappingRules): array
+    {
+        return $mappingRules
+            ->pluck('table_column_name')
+            ->map(fn($value) => $this->normalizeHeaderValue($value))
+            ->filter()
+            ->values()
+            ->toArray();
+    }
+
+    /**
+     * Load all sheets from the uploaded Excel file as collections.
+     */
+    private function loadSheets($file): array
+    {
+        $reader = IOFactory::createReaderForFile($file->getPathname());
+        $reader->setReadDataOnly(true);
+
+        $spreadsheet = $reader->load($file->getPathname());
+        $sheets = [];
+
+        foreach ($spreadsheet->getAllSheets() as $sheet) {
+            $rows = collect($sheet->toArray(null, true, true, false))
+                ->map(fn($row) => collect($row));
+
+            $sheets[] = [
+                'name' => $sheet->getTitle(),
+                'rows' => $rows,
+            ];
+        }
+
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
+
+        return $sheets;
+    }
+
+    /**
+     * Normalize header value for comparison.
+     */
+    private function normalizeHeaderValue($value): string
+    {
+        $normalized = str_replace(['_', '-', '.'], ' ', (string) $value);
+        $normalized = preg_replace('/\s+/', ' ', $normalized ?? '');
+        return strtolower(trim($normalized));
+    }
+
+    /**
+     * Calculate match score between a sheet header and expected headers.
+     */
+    private function calculateMatchScore($headerRow, array $expectedHeaders): int
+    {
+        if (!$headerRow instanceof \Illuminate\Support\Collection) {
+            $headerRow = collect($headerRow ?? []);
+        }
+
+        $normalizedHeaders = $headerRow
+            ->filter(fn($value) => $value !== null && $value !== '')
+            ->map(fn($value) => $this->normalizeHeaderValue($value))
+            ->toArray();
+
+        return count(array_intersect($normalizedHeaders, $expectedHeaders));
+    }
+
+    /**
+     * Determine which sheet to use (auto-detect based on header similarity if needed).
+     */
+    private function determineSheetSelection(array $sheets, array $expectedHeaders, int $headerRowIndex, ?string $requestedSheet = null): array
+    {
+        $matches = [];
+        $bestScore = PHP_INT_MIN;
+        $bestSheetName = null;
+
+        foreach ($sheets as $sheet) {
+            $score = ($sheet['rows']->count() > $headerRowIndex)
+                ? $this->calculateMatchScore($sheet['rows']->get($headerRowIndex, collect()), $expectedHeaders)
+                : -1;
+
+            $matches[] = [
+                'name' => $sheet['name'],
+                'match_score' => $score,
+            ];
+
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestSheetName = $sheet['name'];
+            }
+        }
+
+        $sheetNames = collect($sheets)->pluck('name')->all();
+        $requestedExists = $requestedSheet && in_array($requestedSheet, $sheetNames, true);
+
+        $selectedName = $requestedExists ? $requestedSheet : ($bestSheetName ?? ($sheetNames[0] ?? null));
+        $autoSelected = !$requestedExists;
+
+        $selectedSheet = collect($sheets)->firstWhere('name', $selectedName) ?? $sheets[0];
+
+        return [
+            'sheet' => $selectedSheet,
+            'sheet_name' => $selectedName,
+            'auto_selected' => $autoSelected,
+            'matches' => $matches,
+        ];
+    }
+
+    /**
      * Convert column index (0-based) to Excel column letter
      */
     private function indexToColumn(int $index): string
@@ -570,6 +703,7 @@ class MappingController extends Controller
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
                 'selected_columns' => ['nullable', 'string'],
                 'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
+                'sheet_name' => ['nullable', 'string'],
             ]);
             
             // Automatically use today's date as period_date
@@ -587,6 +721,7 @@ class MappingController extends Controller
 
             $mainTableName = $mapping->table_name;
             $headerRow = $mapping->header_row;
+            $headerRowIndex = max(0, $headerRow - 1);
             $uploadMode = $validated['upload_mode'];
             
             Log::info('Mapping info:', [
@@ -647,9 +782,37 @@ class MappingController extends Controller
             $columnMapping = $mappingRules->pluck('table_column_name', 'excel_column_index')->toArray();
             Log::info('Column mapping:', $columnMapping);
 
-            // Read Excel
-            $excelData = Excel::toCollection(null, $request->file('data_file'))->first();
-            Log::info('Total rows in Excel: ' . $excelData->count());
+            // Read Excel and pick the right sheet
+            $sheets = $this->loadSheets($request->file('data_file'));
+
+            if (empty($sheets)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File Excel tidak memiliki sheet yang bisa dibaca.'
+                ]);
+            }
+
+            $expectedHeaders = $this->buildExpectedHeaders($mapping->columns);
+            $selection = $this->determineSheetSelection(
+                $sheets,
+                $expectedHeaders,
+                $headerRowIndex,
+                $validated['sheet_name'] ?? null
+            );
+
+            $excelData = $selection['sheet']['rows'];
+            Log::info('Total rows in selected sheet: ' . $excelData->count(), [
+                'selected_sheet' => $selection['sheet_name'],
+                'auto_selected' => $selection['auto_selected'],
+                'sheet_matches' => $selection['matches'],
+            ]);
+
+            if ($excelData->count() <= $headerRowIndex) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Sheet '{$selection['sheet_name']}' tidak memiliki baris header ke-{$headerRow}.",
+                ]);
+            }
 
             // Get data rows (skip header)
             $dataRows = $excelData->slice($headerRow);
@@ -733,7 +896,17 @@ class MappingController extends Controller
             
             // Step 2: Insert all data into staging table
             Log::info("Step 2: Inserting " . count($dataToProcess) . " rows into staging table");
-            DB::table($stagingTableName)->insert($dataToProcess);
+
+            // SQL Server has a 2100 parameter limit, so chunk inserts accordingly
+            $columnsPerRow = count($columnMapping) + 3; // mapped cols + period_date + timestamps
+            $maxParams = 2000; // keep a small safety margin
+            $chunkSize = max(1, intdiv($maxParams, max(1, $columnsPerRow)));
+
+            $chunks = array_chunk($dataToProcess, $chunkSize);
+            foreach ($chunks as $index => $chunk) {
+                DB::table($stagingTableName)->insert($chunk);
+                Log::info("Inserted chunk " . ($index + 1) . " of " . count($chunks) . " (rows: " . count($chunk) . ")");
+            }
             Log::info("Data successfully inserted into staging table");
             
             // Step 3: Atomic transaction to sync from staging to main table

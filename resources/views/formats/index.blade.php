@@ -69,8 +69,8 @@
                 <div class="bg-white overflow-hidden shadow-lg rounded-2xl border border-gray-100">
                     <div class="p-6">
                         <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-green-100 rounded-xl p-3">
-                                <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div class="flex-shrink-0 bg-blue-100 rounded-xl p-3">
+                                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
                                 </svg>
                             </div>
@@ -85,8 +85,8 @@
                 <div class="bg-white overflow-hidden shadow-lg rounded-2xl border border-gray-100">
                     <div class="p-6">
                         <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-orange-100 rounded-xl p-3">
-                                <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div class="flex-shrink-0 bg-blue-100 rounded-xl p-3">
+                                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                                 </svg>
                             </div>
@@ -104,7 +104,7 @@
                     {{-- Diubah: Border hover kartu --}}
                     <div class="bg-white overflow-hidden shadow-lg rounded-2xl border border-gray-100 hover:shadow-2xl hover:border-blue-300 transition-all duration-300 transform hover:-translate-y-1">
                         {{-- Diubah: Gradient header kartu --}}
-                        <div class="bg-gradient-to-r from-blue-500 to-cyan-500 px-6 py-4">
+                        <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
                             <div class="flex items-start justify-between">
                                 <div class="flex-1">
                                     <h3 class="text-lg font-bold text-white truncate" title="{{ $mapping->description }}">
@@ -183,7 +183,7 @@
 
                             <div class="grid grid-cols-2 gap-3">
                                 <a href="{{ route('mapping.view.data', $mapping->id) }}" 
-                                   class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-blue-700 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                   class="inline-flex items-center justify-center px-4 py-3 bg-blue-600 hover:bg-blue-700 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all duration-200 shadow-md hover:shadow-lg group">
                                     <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
@@ -191,7 +191,7 @@
                                     Lihat
                                 </a>
                                 <a href="{{ route('export.data', $mapping->id) }}" 
-                                   class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-green-700 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-green-300 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                   class="inline-flex items-center justify-center px-4 py-3 bg-blue-500 hover:bg-blue-600 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all duration-200 shadow-md hover:shadow-lg group">
                                     <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                                     </svg>

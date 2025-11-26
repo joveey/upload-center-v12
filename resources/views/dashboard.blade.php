@@ -195,6 +195,9 @@
                             @empty
                                 <option value="" disabled>Belum ada format terdaftar</option>
                             @endforelse
+                            @can('register format')
+                                <option value="__create__">+ Tambah format baru</option>
+                            @endcan
                         </select>
                         @if($mappings->isEmpty())
                             <p class="mt-3 text-sm text-amber-700 flex items-center bg-amber-50 p-3 rounded-lg border border-amber-200">
@@ -471,24 +474,38 @@
         });
     </script>
     @endif
-
     <script>
         let previewData = null;
+        let currentSheetName = null;
 
         document.addEventListener('DOMContentLoaded', function() {
             const fileInput = document.getElementById('data_file');
             const fileName = document.getElementById('file-name');
             const dropZone = document.getElementById('drop-zone');
+            const previewContent = document.getElementById('previewContent');
+            const mappingSelect = document.getElementById('mapping_id');
+            const createFormatUrl = '{{ route("mapping.register.form") }}';
             
             // Handle file input change
             fileInput.addEventListener('change', function() {
                 if (this.files[0]) {
-                    fileName.textContent = '📎 ' + this.files[0].name;
+                    fileName.textContent = this.files[0].name;
                     fileName.classList.remove('hidden');
                 } else {
                     fileName.classList.add('hidden');
                 }
+                currentSheetName = null;
             });
+
+            // Quick link to create new format from dropdown
+            if (mappingSelect) {
+                mappingSelect.addEventListener('change', function() {
+                    if (this.value === '__create__') {
+                        window.location.href = createFormatUrl;
+                        this.value = '';
+                    }
+                });
+            }
 
             // Drag and Drop functionality
             ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -536,13 +553,13 @@
                     ];
                     
                     if (!validTypes.includes(file.type) && !file.name.match(/\.(xlsx|xls)$/i)) {
-                        alert('❌ File harus berformat Excel (.xlsx atau .xls)');
+                        alert('�?O File harus berformat Excel (.xlsx atau .xls)');
                         return;
                     }
 
                     // Check file size (10MB)
                     if (file.size > 10 * 1024 * 1024) {
-                        alert('❌ Ukuran file maksimal 10MB');
+                        alert('�?O Ukuran file maksimal 10MB');
                         return;
                     }
 
@@ -552,8 +569,9 @@
                     fileInput.files = dataTransfer.files;
 
                     // Show file name
-                    fileName.textContent = '📎 ' + file.name;
+                    fileName.textContent = file.name;
                     fileName.classList.remove('hidden');
+                    currentSheetName = null;
 
                     // Visual feedback
                     dropZone.classList.add('border-green-500', 'bg-green-50');
@@ -570,10 +588,22 @@
             const closeModalX = document.getElementById('closeModalX');
             const modal = document.getElementById('previewModal');
             const form = document.getElementById('uploadForm');
+            const spinner = `
+                <div class="text-center py-16">
+                    <svg class="animate-spin h-16 w-16 mx-auto text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="mt-4 text-gray-600 font-medium">Memuat preview...</p>
+                </div>
+            `;
 
             previewButton.addEventListener('click', function() {
+                loadPreview();
+            });
+
+            function loadPreview(selectedSheet = null) {
                 const mappingId = document.getElementById('mapping_id').value;
-                const fileInput = document.getElementById('data_file');
                 
                 if (!mappingId) {
                     alert('Pilih format terlebih dahulu');
@@ -586,11 +616,15 @@
                 }
 
                 modal.classList.remove('hidden');
+                previewContent.innerHTML = spinner;
 
                 const formData = new FormData();
                 formData.append('_token', '{{ csrf_token() }}');
                 formData.append('mapping_id', mappingId);
                 formData.append('data_file', fileInput.files[0]);
+                if (selectedSheet) {
+                    formData.append('sheet_name', selectedSheet);
+                }
 
                 fetch('{{ route("upload.preview") }}', {
                     method: 'POST',
@@ -599,9 +633,7 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        previewData = data;
-                        document.getElementById('previewContent').innerHTML = data.html;
-                        initializeCheckboxes();
+                        renderPreviewContent(data);
                     } else {
                         alert(data.message || 'Error loading preview');
                         modal.classList.add('hidden');
@@ -612,7 +644,65 @@
                     alert('Terjadi kesalahan saat memuat preview');
                     modal.classList.add('hidden');
                 });
-            });
+            }
+
+            function renderPreviewContent(data) {
+                const previousMode = document.querySelector('input[name="upload_mode"]:checked')?.value;
+                const sheets = data.sheets || [];
+                const selected = data.selected_sheet || (sheets[0]?.name ?? '');
+
+                currentSheetName = selected;
+                previewData = data;
+
+                const options = sheets.map(sheet => {
+                    const scoreLabel = sheet.match_score > 0 ? ` (${sheet.match_score} header cocok)` : '';
+                    const selectedAttr = sheet.name === selected ? 'selected' : '';
+                    return `<option value="${sheet.name}" ${selectedAttr}>${sheet.name}${scoreLabel}</option>`;
+                }).join('');
+
+                const autoBadge = data.auto_selected
+                    ? '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">Auto terdeteksi</span>'
+                    : '';
+
+                const selectorSection = sheets.length ? `
+                    <div class="flex items-start justify-between p-4 mb-4 bg-amber-50 border border-amber-200 rounded-xl">
+                        <div>
+                            <p class="text-sm font-semibold text-gray-900">Pilih sheet</p>
+                            <p class="text-xs text-amber-700 mt-1">Sistem otomatis memilih jika header paling mirip.</p>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            ${autoBadge}
+                            <select id="sheetSelector" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-amber-500 focus:ring focus:ring-amber-200 focus:ring-opacity-50">
+                                ${options}
+                            </select>
+                        </div>
+                    </div>
+                ` : '';
+
+                previewContent.innerHTML = `
+                    <div class="space-y-4">
+                        ${selectorSection}
+                        <div id="sheetPreviewArea">${data.html}</div>
+                    </div>
+                `;
+
+                if (previousMode) {
+                    const savedMode = document.querySelector(`input[name="upload_mode"][value="${previousMode}"]`);
+                    if (savedMode) {
+                        savedMode.checked = true;
+                    }
+                }
+
+                const sheetSelector = document.getElementById('sheetSelector');
+                if (sheetSelector) {
+                    sheetSelector.addEventListener('change', function() {
+                        currentSheetName = this.value;
+                        loadPreview(this.value);
+                    });
+                }
+
+                initializeCheckboxes();
+            }
 
             function initializeCheckboxes() {
                 const selectAll = document.getElementById('selectAllColumns');
@@ -643,11 +733,19 @@
                 });
 
                 // Get upload mode
-                const uploadMode = document.querySelector('input[name="upload_mode"]:checked').value;
+                const uploadModeInput = document.querySelector('input[name="upload_mode"]:checked');
+                if (!uploadModeInput) {
+                    alert('Pilih mode upload');
+                    return;
+                }
+                const uploadMode = uploadModeInput.value;
 
                 const formData = new FormData(form);
                 formData.append('selected_columns', JSON.stringify(selectedColumns));
                 formData.append('upload_mode', uploadMode);
+                if (currentSheetName) {
+                    formData.append('sheet_name', currentSheetName);
+                }
                 
                 confirmUpload.disabled = true;
                 confirmUpload.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Uploading...';
@@ -680,6 +778,7 @@
             closeModalX.addEventListener('click', () => modal.classList.add('hidden'));
         });
     </script>
+
     
     <style>
         .custom-scrollbar::-webkit-scrollbar {
