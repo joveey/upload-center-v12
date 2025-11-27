@@ -1,5 +1,5 @@
 <div class="space-y-4">
-    <div class="bg-blue-50 border border-blue-200 rounded p-3">
+    <div class="bg-[#e8f1fb] border border-[#c7d9f3] rounded p-3">
         <p class="text-sm"><strong>Format:</strong> {{ $mapping->name }}</p>
         <p class="text-sm"><strong>Tabel Tujuan:</strong> {{ $mapping->table_name }}</p>
         <p class="text-sm"><strong>Baris Header:</strong> {{ $mapping->header_row }}</p>

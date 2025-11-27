@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
     <div class="flex items-center space-x-4">
-        <div class="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
+        <div class="flex-shrink-0 w-12 h-12 bg-[#0057b7] rounded-lg flex items-center justify-center shadow-sm">
             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
             </svg>
@@ -22,7 +22,7 @@
     </div>
     @can('register format')
         <a href="{{ route('mapping.register.form') }}">
-            <button class="inline-flex items-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm">
+            <button class="inline-flex items-center px-5 py-2.5 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm">
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                 </svg>
@@ -55,7 +55,7 @@
                     </div>
                 @endif
                 @if (session('error'))
-                    <div class="bg-gradient-to-r from-red-50 to-pink-50 border-l-4 border-red-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
+                    <div class="bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
                         <div class="flex-shrink-0 w-10 h-10 bg-red-500 rounded-lg flex items-center justify-center mr-4">
                             <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
                                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
@@ -81,7 +81,7 @@
                 @if(isset($divisionUploadCounts) && count($divisionUploadCounts) > 0)
                 <div class="lg:col-span-1">
                     <div class="bg-white overflow-hidden shadow-xl rounded-2xl border border-gray-100 h-full">
-                        <div class="bg-gradient-to-r from-blue-500 to-cyan-500 px-6 py-4">
+                        <div class="bg-gradient-to-r from-[#0057b7] to-[#00a1e4] px-6 py-4">
                             <div class="flex items-center">
                                 <div class="flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-xl p-2 shadow-lg">
                                     <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,7 +92,7 @@
                                     <h3 class="text-base font-bold text-white">
                                         Total Upload
                                     </h3>
-                                    <p class="text-blue-100 text-xs mt-0.5">
+                                    <p class="text-[#d8e7f7] text-xs mt-0.5">
                                         Per Divisi
                                     </p>
                                 </div>
@@ -102,9 +102,9 @@
                         <div class="p-6">
                             <div class="space-y-3">
                                 @foreach($divisionUploadCounts as $divCount)
-                                <div class="flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg border border-blue-100 hover:shadow-md transition-shadow duration-200">
+                                <div class="flex items-center justify-between p-3 bg-gradient-to-r from-[#e8f1fb] to-[#d8e7f7] rounded-lg border border-[#c7d9f3] hover:shadow-md transition-shadow duration-200">
                                     <div class="flex items-center space-x-3">
-                                        <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center shadow-sm">
+                                        <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-[#0057b7] to-[#00a1e4] rounded-lg flex items-center justify-center shadow-sm">
                                             <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
                                             </svg>
@@ -112,7 +112,7 @@
                                         <span class="font-semibold text-gray-800">{{ $divCount['name'] }}</span>
                                     </div>
                                     <div class="flex items-center space-x-2">
-                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-sm">
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-gradient-to-r from-[#0057b7] to-[#00a1e4] text-white shadow-sm">
                                             {{ $divCount['count'] }}
                                         </span>
                                     </div>
@@ -128,7 +128,7 @@
                 @if(isset($uploadStats))
                 <div class="lg:col-span-2">
                     <div class="bg-white overflow-hidden shadow-xl rounded-2xl border border-gray-100 h-full">
-                        <div class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-6 py-4">
+                        <div class="bg-gradient-to-r from-[#0057b7] via-[#006ad6] to-[#00a1e4] px-6 py-4">
                             <div class="flex items-center">
                                 <div class="flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-xl p-2 shadow-lg">
                                     <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -139,7 +139,7 @@
                                     <h3 class="text-base font-bold text-white">
                                         Tren Upload
                                     </h3>
-                                    <p class="text-indigo-100 text-xs mt-0.5">
+                                    <p class="text-[#d8e7f7] text-xs mt-0.5">
                                         4 minggu terakhir
                                     </p>
                                 </div>
@@ -158,9 +158,9 @@
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <div class="lg:col-span-2">
         <div class="bg-white overflow-hidden shadow-lg rounded-lg border border-gray-200 hover:shadow-xl transition-shadow duration-200">
-            <div class="bg-blue-600 px-6 py-4 border-b border-blue-700">
+            <div class="bg-[#0057b7] px-6 py-4 border-b border-[#004a99]">
                 <div class="flex items-center">
-                    <div cla                                            ss="flex-shrink-0 bg-blue-700 rounded-lg p-2">
+                    <div cla                                            ss="flex-shrink-0 bg-[#004a99] rounded-lg p-2">
                         <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                         </svg>
@@ -169,7 +169,7 @@
                         <h3 class="text-base font-semibold text-white">
                             Unggah Laporan
                         </h3>
-                        <p class="text-blue-100 text-sm mt-0.5">
+                        <p class="text-[#d8e7f7] text-sm mt-0.5">
                             Import data Excel dengan format yang sudah terdaftar
                         </p>
                     </div>
@@ -181,12 +181,12 @@
                     @csrf
                     <div>
                         <label for="mapping_id" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
-                            <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                             </svg>
                             Format Laporan
                         </label>
-                        <select name="mapping_id" id="mapping_id" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition duration-150 py-2.5 px-3" required>
+                        <select name="mapping_id" id="mapping_id" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring-1 focus:ring-[#0057b7] transition duration-150 py-2.5 px-3" required>
                             <option value="">Pilih format laporan...</option>
                             @forelse($mappings as $mapping)
                                 <option value="{{ $mapping->id }}">
@@ -212,18 +212,18 @@
                     
                     <div>
                         <label for="data_file" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
-                            <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
                             </svg>
                             File Excel
                         </label>
-                        <div id="drop-zone" class="mt-1 flex justify-center px-6 pt-6 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-blue-400 transition-colors duration-200 bg-gray-50">
+                        <div id="drop-zone" class="mt-1 flex justify-center px-6 pt-6 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-[#00a1e4] transition-colors duration-200 bg-gray-50">
                             <div class="space-y-2 text-center">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                                     <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                                 </svg>
                                 <div class="flex text-sm text-gray-600">
-                                    <label for="data_file" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-700 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 px-3 py-1">
+                                    <label for="data_file" class="relative cursor-pointer bg-white rounded-md font-medium text-[#0057b7] hover:text-[#004a99] focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-[#0057b7] px-3 py-1">
                                         <span>Upload file</span>
                                         <input id="data_file" name="data_file" type="file" accept=".xlsx,.xls" class="sr-only" required>
                                     </label>
@@ -232,11 +232,11 @@
                                 <p class="text-xs text-gray-500">XLSX, XLS hingga 40MB</p>
                             </div>
                         </div>
-                        <p id="file-name" class="mt-3 text-sm text-gray-700 font-medium hidden bg-blue-50 p-2 rounded-lg border border-blue-200"></p>
+                        <p id="file-name" class="mt-3 text-sm text-gray-700 font-medium hidden bg-[#e8f1fb] p-2 rounded-lg border border-[#c7d9f3]"></p>
                     </div>
 
                     <div class="pt-2">
-                        <button type="button" id="previewButton" class="w-full inline-flex justify-center items-center px-5 py-3 bg-blue-600 hover:bg-blue-700 border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button type="button" id="previewButton" class="w-full inline-flex justify-center items-center px-5 py-3 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
@@ -251,17 +251,17 @@
 
                 <div class="lg:col-span-1">
                     <div class="bg-white overflow-hidden shadow-xl rounded-lg border border-gray-200">
-    <div class="bg-blue-600 px-6 py-4 border-b border-blue-700">
+    <div class="bg-[#0057b7] px-6 py-4 border-b border-[#004a99]">
         <div class="flex items-center justify-between">
             <div class="flex items-center">
-                <div class="flex-shrink-0 bg-blue-700 rounded-lg p-2">
+                <div class="flex-shrink-0 bg-[#004a99] rounded-lg p-2">
                     <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
                 </div>
                 <div class="ml-3">
                     <h3 class="text-base font-semibold text-white">Format</h3>
-                    <p class="text-sm text-blue-100">{{ $mappings->count() }} tersedia</p>
+                    <p class="text-sm text-[#d8e7f7]">{{ $mappings->count() }} tersedia</p>
                 </div>
             </div>
         </div>
@@ -269,7 +269,7 @@
     
     <div class="p-4 max-h-[600px] overflow-y-auto custom-scrollbar">
         @forelse ($mappings as $mapping)
-            <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all duration-200">
+            <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-[#00a1e4] hover:shadow-md transition-all duration-200">
                 <div class="flex items-start justify-between mb-3">
                     <div class="flex-1">
                         <h4 class="font-semibold text-gray-900 mb-2">
@@ -277,13 +277,13 @@
                         </h4>
                         <div class="space-y-2">
                             <p class="text-xs text-gray-600 flex items-center">
-                                <svg class="w-3 h-3 mr-1.5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                <svg class="w-3 h-3 mr-1.5 text-[#0057b7]" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>
                                 </svg>
                                 <span class="font-medium">Code:</span> <span class="ml-1 font-mono text-gray-700">{{ $mapping->code }}</span>
                             </p>
                             <p class="text-xs text-gray-600 flex items-center">
-                                <svg class="w-3 h-3 mr-1.5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                <svg class="w-3 h-3 mr-1.5 text-[#0057b7]" fill="currentColor" viewBox="0 0 20 20">
                                     <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"></path>
                                     <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"></path>
                                     <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"></path>
@@ -292,7 +292,7 @@
                             </p>
                             <div class="flex flex-wrap gap-1 mt-2">
                                 @foreach($mapping->columns->take(3) as $col)
-                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-[#e8f1fb] text-[#004a99] border border-[#c7d9f3]">
                                         {{ $col->table_column_name }}
                                     </span>
                                 @endforeach
@@ -308,7 +308,7 @@
                 
                 <div class="mt-3 pt-3 border-t border-gray-200 grid grid-cols-2 gap-2">
                     <a href="{{ route('mapping.view.data', $mapping->id) }}" 
-                       class="inline-flex items-center justify-center px-3 py-2 bg-blue-600 hover:bg-blue-700 border border-transparent rounded-lg font-medium text-xs text-white transition-colors duration-200">
+                       class="inline-flex items-center justify-center px-3 py-2 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-xs text-white transition-colors duration-200">
                         <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
@@ -347,7 +347,7 @@
             <div class="mt-3">
                 <div class="flex justify-between items-center mb-6 pb-5 border-b-2 border-gray-200">
                     <div class="flex items-center space-x-4">
-                        <div class="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center shadow-lg">
+                        <div class="w-12 h-12 bg-gradient-to-br from-[#0057b7] to-[#006ad6] rounded-xl flex items-center justify-center shadow-lg">
                             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
@@ -367,7 +367,7 @@
                 
                 <div id="previewContent" class="mb-6">
                     <div class="text-center py-16">
-                        <svg class="animate-spin h-16 w-16 mx-auto text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg class="animate-spin h-16 w-16 mx-auto text-[#0057b7]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -402,12 +402,12 @@
         const uploadData = @json($uploadStats);
         
         const colors = [
-            'rgb(99, 102, 241)',   // indigo
-            'rgb(168, 85, 247)',   // purple
-            'rgb(236, 72, 153)',   // pink
-            'rgb(14, 165, 233)',   // sky
-            'rgb(34, 197, 94)',    // green
-            'rgb(251, 146, 60)',   // orange
+            'rgb(0, 87, 183)',    // Panasonic blue
+            'rgb(0, 161, 228)',   // Panasonic light blue
+            'rgb(0, 74, 153)',    // Deep blue
+            'rgb(74, 138, 201)',  // Medium blue
+            'rgb(16, 149, 131)',  // Teal accent
+            'rgb(93, 120, 155)',  // Muted slate
         ];
 
         const datasets = uploadData.datasets.map((dataset, index) => ({
@@ -533,12 +533,12 @@
             });
 
             function highlight(e) {
-                dropZone.classList.add('border-blue-500', 'bg-blue-50', 'border-4');
+                dropZone.classList.add('border-[#0057b7]', 'bg-[#e8f1fb]', 'border-4');
                 dropZone.classList.remove('border-gray-300', 'bg-gray-50');
             }
 
             function unhighlight(e) {
-                dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'border-4');
+                dropZone.classList.remove('border-[#0057b7]', 'bg-[#e8f1fb]', 'border-4');
                 dropZone.classList.add('border-gray-300', 'bg-gray-50');
             }
 
@@ -596,7 +596,7 @@
             const form = document.getElementById('uploadForm');
             const spinner = `
                 <div class="text-center py-16">
-                    <svg class="animate-spin h-16 w-16 mx-auto text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg class="animate-spin h-16 w-16 mx-auto text-[#0057b7]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
@@ -795,11 +795,11 @@
             border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #a855f7;
+            background: #0057b7;
             border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #9333ea;
+            background: #004a99;
         }
         @keyframes slide-down {
             from {

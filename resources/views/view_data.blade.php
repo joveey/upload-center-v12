@@ -7,7 +7,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
                     </svg>
                 </a>
-                <div class="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
+                <div class="flex-shrink-0 w-12 h-12 bg-[#0057b7] rounded-lg flex items-center justify-center shadow-sm">
                     <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                     </svg>
@@ -40,8 +40,8 @@
                 <div class="bg-white overflow-hidden shadow-lg rounded-lg border border-gray-200">
                     <div class="p-6">
                         <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-blue-100 rounded-lg p-3">
-                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div class="flex-shrink-0 bg-[#e0ebf9] rounded-lg p-3">
+                                <svg class="w-6 h-6 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                 </svg>
                             </div>
@@ -90,15 +90,15 @@
             <div class="bg-white overflow-hidden shadow-lg rounded-lg border border-gray-200">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-blue-600">
+                        <thead class="bg-[#0057b7]">
                             <tr>
-                                <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider sticky left-0 bg-blue-600">
+                                <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider sticky left-0 bg-[#0057b7]">
                                     ID
                                 </th>
                                 @foreach($columnMapping as $excelCol => $dbCol)
                                     <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
                                         <div class="flex flex-col">
-                                            <span class="text-blue-200">{{ $excelCol }}</span>
+                                            <span class="text-[#d8e7f7]">{{ $excelCol }}</span>
                                             <span class="font-semibold mt-1">{{ ucwords(str_replace('_', ' ', $dbCol)) }}</span>
                                         </div>
                                     </th>
@@ -113,7 +113,7 @@
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @forelse($data as $row)
-                                <tr class="hover:bg-blue-50 transition-colors">
+                                <tr class="hover:bg-[#e8f1fb] transition-colors">
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-gray-50">
                                         #{{ $row->id }}
                                     </td>

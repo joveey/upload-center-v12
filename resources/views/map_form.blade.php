@@ -37,7 +37,7 @@
                                             {{ $header }}
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            <select name="mappings[{{ $header }}]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                                            <select name="mappings[{{ $header }}]" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/25 focus:ring-opacity-50">
                                                 <option value="">-- Jangan Simpan Kolom Ini --</option>
                                                 @foreach ($databaseColumns as $dbColumn)
                                                 <option value="{{ $dbColumn }}">{{ $dbColumn }}</option>
@@ -52,7 +52,7 @@
 
                         <div class="flex items-center justify-end mt-6">
                             <button type="submit"
-                                    class="inline-flex items-center px-4 py-2 bg-gray-800 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-700 focus:bg-gray-700 active:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                                    class="inline-flex items-center px-4 py-2 bg-gray-800 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-700 focus:bg-gray-700 active:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0057b7] focus:ring-offset-2 transition ease-in-out duration-150">
                                 Simpan Aturan Mapping
                             </button>
                         </div>

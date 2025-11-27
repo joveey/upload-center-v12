@@ -4,7 +4,7 @@
         <tbody class="bg-white divide-y divide-gray-200">
             @forelse($rows as $index => $row)
                 {{-- Baris ini bisa diklik dan akan mengirim nomor barisnya (index + 1) --}}
-                <tr class="cursor-pointer hover:bg-indigo-50 preview-row" data-row="{{ $index + 1 }}">
+                <tr class="cursor-pointer hover:bg-[#e8f1fb] preview-row" data-row="{{ $index + 1 }}">
                     <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-gray-500 bg-gray-50 w-12 text-center">{{ $index + 1 }}</td>
                     @foreach($row as $cell)
                         <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-700">{{ $cell }}</td>
