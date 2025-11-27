@@ -229,7 +229,7 @@
                                     </label>
                                     <p class="pl-1">atau drag & drop</p>
                                 </div>
-                                <p class="text-xs text-gray-500">XLSX, XLS hingga 10MB</p>
+                                <p class="text-xs text-gray-500">XLSX, XLS hingga 40MB</p>
                             </div>
                         </div>
                         <p id="file-name" class="mt-3 text-sm text-gray-700 font-medium hidden bg-blue-50 p-2 rounded-lg border border-blue-200"></p>
@@ -489,6 +489,12 @@
             // Handle file input change
             fileInput.addEventListener('change', function() {
                 if (this.files[0]) {
+                    if (this.files[0].size > 40 * 1024 * 1024) {
+                        alert('���?O Ukuran file maksimal 40MB');
+                        fileInput.value = '';
+                        fileName.classList.add('hidden');
+                        return;
+                    }
                     fileName.textContent = this.files[0].name;
                     fileName.classList.remove('hidden');
                 } else {
@@ -557,9 +563,9 @@
                         return;
                     }
 
-                    // Check file size (10MB)
-                    if (file.size > 10 * 1024 * 1024) {
-                        alert('�?O Ukuran file maksimal 10MB');
+                    // Check file size (40MB)
+                    if (file.size > 40 * 1024 * 1024) {
+                        alert('�?O Ukuran file maksimal 40MB');
                         return;
                     }
 
@@ -811,3 +817,4 @@
     </style>
     @endpush
 </x-app-layout>
+

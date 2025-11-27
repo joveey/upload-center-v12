@@ -198,6 +198,47 @@
                                     Export
                                 </a>
                             </div>
+
+                            @can('register format')
+                                <div class="mt-4 rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)] space-y-4">
+                                    <div class="flex items-start space-x-3">
+                                        <div class="flex-1 space-y-1">
+                                            <div class="flex items-center space-x-2">
+                                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-2xs font-semibold bg-amber-100 text-amber-800 border border-amber-200 shadow-sm">Danger Zone</span>
+                                                <p class="text-sm font-semibold text-amber-900">Aksi hapus</p>
+                                            </div>
+                                            <p class="text-xs text-amber-800 leading-snug">Hapus isi akan reset ID tanpa merusak struktur. Hapus format akan menghilangkan tabel dan mapping.</p>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <form method="POST" action="{{ route('mapping.clear.data', $mapping->id) }}">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="button"
+                                                    class="w-full inline-flex items-center justify-center px-4 py-3 bg-white text-amber-900 border border-amber-200 hover:border-amber-300 hover:bg-amber-50 rounded-xl font-semibold text-sm uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-amber-200 transition-all duration-200 shadow-sm hover:shadow group btn-clear-data"
+                                                    data-name="{{ $mapping->description ?? $mapping->code }}"
+                                                    data-table="{{ $mapping->table_name }}">
+                                                <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-6 4h6m-8 4h10a2 2 0 002-2V7a2 2 0 00-2-2h-3.586a1 1 0 01-.707-.293l-1.414-1.414A1 1 0 0010.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                                                </svg>
+                                                Hapus Isi Saja
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="{{ route('mapping.destroy', $mapping->id) }}">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="button" 
+                                                    class="w-full inline-flex items-center justify-center px-4 py-3 bg-red-600 hover:bg-red-700 border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-red-300 transition-all duration-200 shadow-md hover:shadow-lg group btn-delete-format"
+                                                    data-name="{{ $mapping->description ?? $mapping->code }}">
+                                                <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5-4h4a1 1 0 011 1v1H9V4a1 1 0 011-1z"></path>
+                                                </svg>
+                                                Hapus Format & Data
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            @endcan
                         </div>
                     </div>
                 @empty
@@ -225,3 +266,44 @@
         </div>
     </div>
 </x-app-layout>
+
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.btn-delete-format').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const name = btn.dataset.name || 'format';
+                    const firstConfirm = confirm(`Hapus format "${name}" beserta tabel datanya?`);
+                    if (!firstConfirm) {
+                        return;
+                    }
+
+                    const secondConfirm = prompt('Ketik KONFIRMASI untuk konfirmasi kedua:');
+                    if (!secondConfirm || secondConfirm.trim().toUpperCase() !== 'KONFIRMASI') {
+                        alert('Penghapusan dibatalkan karena konfirmasi kedua tidak sesuai.');
+                        return;
+                    }
+
+                    btn.closest('form').submit();
+                });
+            });
+
+            document.querySelectorAll('.btn-clear-data').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const name = btn.dataset.name || 'format';
+                    const table = btn.dataset.table || 'tabel';
+                    const firstConfirm = confirm(`Hapus semua isi data untuk format "${name}" (tabel ${table})?`);
+                    if (!firstConfirm) {
+                        return;
+                    }
+
+                    const secondConfirm = prompt('Ketik KONFIRMASI untuk konfirmasi kedua:');
+                    if (!secondConfirm || secondConfirm.trim().toUpperCase() !== 'KONFIRMASI') {
+                        alert('Penghapusan dibatalkan karena konfirmasi kedua tidak sesuai.');
+                        return;
+                    }
+
+                    btn.closest('form').submit();
+            });
+        });
+    });
+</script>

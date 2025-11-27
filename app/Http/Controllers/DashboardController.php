@@ -137,6 +137,21 @@ class DashboardController extends Controller
     public function store(Request $request): RedirectResponse
     {
         Log::info('Memulai proses pendaftaran format & pembuatan tabel baru.');
+
+        // Normalize mapping inputs to avoid false duplicate detection
+        $normalizedMappings = collect($request->input('mappings', []))
+            ->map(function ($mapping) {
+                return [
+                    'excel_column' => strtoupper(trim($mapping['excel_column'] ?? '')),
+                    'database_column' => strtolower(trim($mapping['database_column'] ?? '')),
+                    'is_unique_key' => $mapping['is_unique_key'] ?? null,
+                ];
+            })
+            ->filter(fn ($row) => $row['excel_column'] !== '' && $row['database_column'] !== '')
+            ->values()
+            ->all();
+
+        $request->merge(['mappings' => $normalizedMappings]);
         
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:mapping_indices,code',

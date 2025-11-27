@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -17,6 +18,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 
 class MappingController extends Controller
 {
@@ -34,6 +36,21 @@ class MappingController extends Controller
     public function processRegisterForm(Request $request): RedirectResponse
     {
         Log::info('Memulai proses pendaftaran format & pembuatan tabel baru.');
+
+        // Normalize mapping inputs (trim/case) to avoid false duplicate detection
+        $normalizedMappings = collect($request->input('mappings', []))
+            ->map(function ($mapping) {
+                return [
+                    'excel_column' => strtoupper(trim($mapping['excel_column'] ?? '')),
+                    'database_column' => strtolower(trim($mapping['database_column'] ?? '')),
+                    'is_unique_key' => $mapping['is_unique_key'] ?? null,
+                ];
+            })
+            ->filter(fn ($row) => $row['excel_column'] !== '' && $row['database_column'] !== '')
+            ->values()
+            ->all();
+
+        $request->merge(['mappings' => $normalizedMappings]);
         
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:mapping_indices,code',
@@ -79,7 +96,13 @@ class MappingController extends Controller
             Schema::create($tableName, function (Blueprint $table) use ($validated, $uniqueKeyColumns, $tableName) {
                 $table->id();
                 foreach ($validated['mappings'] as $mapping) {
-                    $table->text($mapping['database_column'])->nullable();
+                    $columnName = $mapping['database_column'];
+                    // SQL Server cannot index TEXT types; use string for unique-key columns
+                    if (in_array($columnName, $uniqueKeyColumns, true)) {
+                        $table->string($columnName, 450)->nullable();
+                    } else {
+                        $table->text($columnName)->nullable();
+                    }
                 }
                 $table->date('period_date')->index();
                 $table->boolean('is_active')->default(true)->index();
@@ -148,7 +171,7 @@ class MappingController extends Controller
         $query = MappingIndex::with('columns', 'division');
         
         // Filter by division if not super-admin
-        if (!$user->hasRole('super-admin')) {
+        if (!$this->userHasRole($user, 'super-admin')) {
             $query->where('division_id', $user->division_id);
         }
         
@@ -162,7 +185,7 @@ class MappingController extends Controller
                 $query = DB::table($tableName);
                 
                 // Filter by division if not super-admin
-                if (!$user->hasRole('super-admin')) {
+                if (!$this->userHasRole($user, 'super-admin')) {
                     $actualTableColumns = DB::getSchemaBuilder()->getColumnListing($tableName);
                     if (in_array('division_id', $actualTableColumns)) {
                         $query->where('division_id', $user->division_id);
@@ -184,22 +207,23 @@ class MappingController extends Controller
     /**
      * View data from a specific format/mapping table
      */
-    public function viewData($mappingId): View
+    public function viewData($mappingId): View|RedirectResponse
     {
         $user = Auth::user();
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
 
         // Check permission
-        if (!$user->hasRole('super-admin') && $mapping->division_id !== $user->division_id) {
+        if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
             abort(403, 'Anda tidak memiliki akses untuk melihat data format ini.');
         }
 
         $tableName = $mapping->table_name;
         
         // Get column mapping sorted by Excel column order
-        $columnMapping = $mapping->columns->sortBy(function($col) {
-            return ord($col->excel_column_index);
-        })->pluck('table_column_name', 'excel_column_index')->toArray();
+        $columnMapping = $mapping->columns
+            ->sortBy(fn($col) => $this->columnLetterToIndex($col->excel_column_index))
+            ->pluck('table_column_name', 'excel_column_index')
+            ->toArray();
 
         if (empty($columnMapping)) {
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
@@ -217,7 +241,7 @@ class MappingController extends Controller
         $query = DB::table($tableName)->select(array_merge(['id'], $validColumns, ['created_at', 'updated_at']));
         
         // Filter by division if not super-admin
-        if (!$user->hasRole('super-admin')) {
+        if (!$this->userHasRole($user, 'super-admin')) {
             if (in_array('division_id', $actualTableColumns)) {
                 $query->where('division_id', $user->division_id);
             }
@@ -235,13 +259,69 @@ class MappingController extends Controller
     }
 
     /**
+     * Extract headers from uploaded Excel (for register form).
+     */
+    public function extractHeaders(Request $request): JsonResponse
+    {
+        try {
+            @set_time_limit(120);
+            Log::info('Extract headers request received', [
+                'header_row' => $request->input('header_row'),
+                'file' => $request->file('data_file')?->getClientOriginalName(),
+                'size' => $request->file('data_file')?->getSize(),
+            ]);
+
+            $validated = $request->validate([
+                'data_file' => ['required', File::types(['xlsx', 'xls'])->max(40960)], // 40 MB
+                'header_row' => ['required', 'integer', 'min:1'],
+            ]);
+
+            $headerRowIndex = max(0, $validated['header_row'] - 1);
+
+            $headers = $this->loadHeaderRow($request->file('data_file'), $headerRowIndex);
+
+            // Filter header kosong di ujung
+            $headers = collect($headers)
+                ->filter(fn($item) => ($item['header'] ?? '') !== '')
+                ->values()
+                ->all();
+
+            if (empty($headers)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Header tidak ditemukan pada baris tersebut.'
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'sheet_name' => 'sheet_1',
+                'headers' => $headers,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Gagal extract headers: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'file' => $request->file('data_file')?->getClientOriginalName(),
+            ]);
+            $message = $e instanceof \Illuminate\Validation\ValidationException
+                ? implode(' ', collect($e->errors())->flatten()->all())
+                : 'Gagal memproses file. Pastikan format dan ukuran sesuai.';
+            return response()->json([
+                'success' => false,
+                'message' => $message,
+            ], $e instanceof \Illuminate\Validation\ValidationException ? 422 : 500);
+        }
+    }
+
+    /**
      * Preview upload - Menampilkan preview data dan mapping
      */
     public function showUploadPreview(Request $request): JsonResponse
     {
         try {
+            @set_time_limit(300);
             $validated = $request->validate([
-                'data_file' => ['required', File::types(['xlsx', 'xls'])],
+                'data_file' => ['required', File::types(['xlsx', 'xls'])->max(40960)], // 40 MB
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
                 'sheet_name' => ['nullable', 'string'],
             ]);
@@ -257,8 +337,8 @@ class MappingController extends Controller
 
             $headerRowIndex = max(0, $mapping->header_row - 1);
 
-            // Baca semua sheet lalu pilih yang sesuai
-            $sheets = $this->loadSheets($request->file('data_file'));
+            // Baca semua sheet (hanya header dan beberapa baris) untuk preview
+            $sheets = $this->loadSheetsPreview($request->file('data_file'), $headerRowIndex, 5);
 
             if (empty($sheets)) {
                 return response()->json([
@@ -530,6 +610,178 @@ class MappingController extends Controller
     }
 
     /**
+     * Load only header + limited rows per sheet to reduce memory (for preview).
+     */
+    private function loadSheetsPreview($file, int $headerRowIndex, int $previewRows = 5): array
+    {
+        $path = $file->getPathname();
+        /** @var \PhpOffice\PhpSpreadsheet\Reader\IReader $reader */
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+
+        // Target rows (1-based) to read
+        $startRow = $headerRowIndex + 1;
+        $endRow = $startRow + $previewRows;
+
+        $sheetNames = $this->listWorksheetNames($file);
+        $result = [];
+
+        foreach ($sheetNames as $sheetName) {
+            // Limit to single sheet per load
+            if (method_exists($reader, 'setLoadSheetsOnly')) {
+                $reader->setLoadSheetsOnly([$sheetName]);
+            }
+
+            // Filter only needed rows
+            $filter = new class($startRow, $endRow) implements IReadFilter {
+                public function __construct(private int $start, private int $end) {}
+                public function readCell($column, $row, $worksheetName = ''): bool
+                {
+                    return $row >= $this->start && $row <= $this->end;
+                }
+            };
+
+            if (method_exists($reader, 'setReadFilter')) {
+                $reader->setReadFilter($filter);
+            }
+
+            $spreadsheet = $reader->load($path);
+            $worksheet = $spreadsheet->getSheet(0);
+
+            $highestColumn = $worksheet->getHighestColumn();
+            $range = "A{$startRow}:{$highestColumn}{$endRow}";
+            $rowsArray = $worksheet->rangeToArray($range, null, true, true, false);
+
+            $rows = collect($rowsArray)->map(fn($row) => collect($row));
+
+            $result[] = [
+                'name' => $sheetName,
+                'rows' => $rows,
+            ];
+
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get worksheet names safely.
+     */
+    private function listWorksheetNames($file): array
+    {
+        $path = $file->getPathname();
+        /** @var \PhpOffice\PhpSpreadsheet\Reader\IReader $reader */
+        $reader = IOFactory::createReaderForFile($path);
+        return method_exists($reader, 'listWorksheetNames')
+            ? $reader->listWorksheetNames($path)
+            : ['Sheet1'];
+    }
+
+    /**
+     * Get total rows of a worksheet if available, fallback to a large number.
+     */
+    private function getWorksheetRowCount($file, string $sheetName): int
+    {
+        $path = $file->getPathname();
+        /** @var \PhpOffice\PhpSpreadsheet\Reader\IReader $reader */
+        $reader = IOFactory::createReaderForFile($path);
+
+        if (method_exists($reader, 'listWorksheetInfo')) {
+            $info = $reader->listWorksheetInfo($path);
+            foreach ($info as $sheetInfo) {
+                if (($sheetInfo['worksheetName'] ?? '') === $sheetName) {
+                    return (int) ($sheetInfo['totalRows'] ?? 0);
+                }
+            }
+        }
+
+        // Fallback: assume very large, loop stops when chunk has no data
+        return 1000000;
+    }
+
+    /**
+     * Generator to stream rows from a specific sheet starting at given row.
+     */
+    private function sheetRowGenerator($file, string $sheetName, int $startRow): \Generator
+    {
+        $path = $file->getPathname();
+        /** @var \PhpOffice\PhpSpreadsheet\Reader\IReader $reader */
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+
+        if (method_exists($reader, 'setLoadSheetsOnly')) {
+            $reader->setLoadSheetsOnly([$sheetName]);
+        }
+
+        $spreadsheet = $reader->load($path);
+        $worksheet = $spreadsheet->getSheetByName($sheetName) ?? $spreadsheet->getSheet(0);
+
+        foreach ($worksheet->getRowIterator($startRow) as $row) {
+            $cellIterator = $row->getCellIterator();
+            $cellIterator->setIterateOnlyExistingCells(false);
+            $rowData = [];
+            foreach ($cellIterator as $cell) {
+                $rowData[] = $cell->getValue();
+            }
+            yield collect($rowData);
+        }
+
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
+    }
+
+    /**
+     * Load only the specified header row from the first sheet to minimize memory.
+     */
+    private function loadHeaderRow($file, int $headerRowIndex, ?string $sheetName = null): array
+    {
+        $rowNumber = $headerRowIndex + 1; // Spreadsheet is 1-based
+        $reader = IOFactory::createReaderForFile($file->getPathname());
+        $reader->setReadDataOnly(true);
+
+        // Restrict reading to the target row only
+        $filter = new class($rowNumber) implements IReadFilter {
+            public function __construct(private int $rowNumber) {}
+            public function readCell($column, $row, $worksheetName = ''): bool
+            {
+                return $row === $this->rowNumber;
+            }
+        };
+
+        if (method_exists($reader, 'setReadFilter')) {
+            $reader->setReadFilter($filter);
+        }
+
+        if ($sheetName && method_exists($reader, 'setLoadSheetsOnly')) {
+            $reader->setLoadSheetsOnly([$sheetName]);
+        }
+
+        $spreadsheet = $reader->load($file->getPathname());
+        $worksheet = $sheetName
+            ? ($spreadsheet->getSheetByName($sheetName) ?? $spreadsheet->getSheet(0))
+            : $spreadsheet->getSheet(0);
+
+        $headers = [];
+        foreach ($worksheet->getRowIterator($rowNumber, $rowNumber) as $row) {
+            $cellIterator = $row->getCellIterator();
+            $cellIterator->setIterateOnlyExistingCells(false);
+            foreach ($cellIterator as $cell) {
+                $headers[] = [
+                    'excel_column' => strtoupper($cell->getColumn()),
+                    'header' => is_scalar($cell->getValue()) ? (string) $cell->getValue() : '',
+                ];
+            }
+        }
+
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
+
+        return $headers;
+    }
+
+    /**
      * Normalize header value for comparison.
      */
     private function normalizeHeaderValue($value): string
@@ -611,6 +863,166 @@ class MappingController extends Controller
     }
 
     /**
+     * Fast batch insert for SQL Server without hitting 2100-parameter limit by inlining values.
+     */
+    private function insertSqlServerBatch(string $table, array $rows): void
+    {
+        if (empty($rows)) {
+            return;
+        }
+
+        // SQL Server limits INSERT ... VALUES to 1000 row value expressions
+        $rowLimit = 900;
+        if (count($rows) > $rowLimit) {
+            foreach (array_chunk($rows, $rowLimit) as $chunk) {
+                $this->insertSqlServerBatch($table, $chunk);
+            }
+            return;
+        }
+
+        $columns = array_keys($rows[0]);
+        $quotedColumns = array_map(fn($col) => '[' . $col . ']', $columns);
+
+        $pdo = DB::connection()->getPdo();
+        $valuesSql = [];
+
+        foreach ($rows as $row) {
+            $vals = [];
+            foreach ($columns as $col) {
+                $value = $row[$col] ?? null;
+                if ($value === null) {
+                    $vals[] = 'NULL';
+                    continue;
+                }
+
+                // Normalize booleans to tinyint
+                if (is_bool($value)) {
+                    $value = $value ? 1 : 0;
+                }
+
+                // Quote scalar values safely
+                $vals[] = $pdo->quote((string) $value);
+            }
+            $valuesSql[] = '(' . implode(',', $vals) . ')';
+        }
+
+        $sql = 'INSERT INTO [' . $table . '] (' . implode(',', $quotedColumns) . ') VALUES ' . implode(',', $valuesSql) . ';';
+        DB::unprepared($sql);
+    }
+
+    /**
+     * Convert Excel column letters (e.g., A, Z, AA) into zero-based numeric index.
+     */
+    private function columnLetterToIndex(string $column): int
+    {
+        $column = strtoupper(trim($column));
+
+        if ($column === '') {
+            return 0;
+        }
+
+        $index = 0;
+        $length = strlen($column);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $column[$i];
+            if ($char < 'A' || $char > 'Z') {
+                // Skip invalid characters so we don't break the calculation mid-way
+                continue;
+            }
+            $index = ($index * 26) + (ord($char) - ord('A') + 1);
+        }
+
+        // convert to zero-based index
+        return max(0, $index - 1);
+    }
+
+    /**
+     * Clear only the data rows of a mapping's table.
+     */
+    public function clearData(MappingIndex $mapping): RedirectResponse
+    {
+        $user = Auth::user();
+
+        if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
+            abort(403, 'Anda tidak memiliki akses untuk format ini.');
+        }
+
+        $tableName = $mapping->table_name;
+        if (!$tableName || !Schema::hasTable($tableName)) {
+            return redirect()->route('formats.index')->with('error', "Tabel '{$tableName}' tidak ditemukan.");
+        }
+
+        try {
+            $rowCount = DB::table($tableName)->count();
+
+            $driver = DB::connection()->getDriverName();
+
+            if ($driver === 'sqlsrv') {
+                DB::statement("TRUNCATE TABLE [{$tableName}]");
+            } elseif ($driver === 'pgsql') {
+                DB::statement("TRUNCATE TABLE \"{$tableName}\" RESTART IDENTITY CASCADE");
+            } else {
+                DB::statement("TRUNCATE TABLE `{$tableName}`");
+            }
+
+            Log::warning("Tabel {$tableName} dikosongkan & ID di-reset ({$rowCount} baris dihapus) oleh user {$user->id}");
+
+            return redirect()
+                ->route('formats.index')
+                ->with('success', "Isi tabel '{$tableName}' berhasil dihapus dan ID di-reset (total {$rowCount} baris).");
+        } catch (\Exception $e) {
+            Log::error("Gagal mengosongkan tabel {$tableName}: " . $e->getMessage());
+            return redirect()
+                ->route('formats.index')
+                ->with('error', 'Gagal menghapus isi tabel: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Delete mapping format and its table data with confirmation guard.
+     */
+    public function destroy(MappingIndex $mapping): RedirectResponse
+    {
+        $user = Auth::user();
+
+        // Only allow same division unless super-admin
+        if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
+            abort(403, 'Anda tidak memiliki akses untuk menghapus format ini.');
+        }
+
+        $tableName = $mapping->table_name;
+        Log::warning("Menghapus format {$mapping->id} ({$mapping->description}) beserta tabel {$tableName}");
+
+        DB::beginTransaction();
+        try {
+            // Drop data table if exists
+            if ($tableName && Schema::hasTable($tableName)) {
+                Schema::dropIfExists($tableName);
+                Log::info("Tabel {$tableName} dihapus.");
+            }
+
+            // Delete mapping columns and index
+            $mapping->columns()->delete();
+            $mapping->delete();
+
+            DB::commit();
+            Log::info("Format {$mapping->id} berhasil dihapus.");
+
+            return redirect()
+                ->route('formats.index')
+                ->with('success', "Format '{$mapping->description}' dan tabel '{$tableName}' berhasil dihapus.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Gagal menghapus format: ' . $e->getMessage());
+
+            return redirect()
+                ->route('formats.index')
+                ->with('error', 'Gagal menghapus format: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Convert Excel date serial number to readable date format
      * Excel stores dates as numbers (days since 1900-01-01)
      * Also handles string dates like DD/MM/YYYY or DD-MM-YYYY
@@ -689,6 +1101,26 @@ class MappingController extends Controller
     }
 
     /**
+     * Reset identity/auto-increment for a table (used after full delete).
+     */
+    private function resetIdentity(string $tableName): void
+    {
+        try {
+            $driver = DB::connection()->getDriverName();
+
+            if ($driver === 'sqlsrv') {
+                DB::statement("DBCC CHECKIDENT ('[{$tableName}]', RESEED, 0)");
+            } elseif ($driver === 'pgsql') {
+                DB::statement("SELECT setval(pg_get_serial_sequence('{$tableName}', 'id'), 1, false)");
+            } else {
+                DB::statement("ALTER TABLE `{$tableName}` AUTO_INCREMENT = 1");
+            }
+        } catch (\Exception $e) {
+            Log::warning("Gagal reset identity untuk tabel {$tableName}: " . $e->getMessage());
+        }
+    }
+
+    /**
      * Upload data - Process actual upload with STAGING TABLE pattern
      */
     public function uploadData(Request $request): JsonResponse
@@ -696,10 +1128,21 @@ class MappingController extends Controller
         Log::info('=== MEMULAI UPLOAD DATA DENGAN STAGING TABLE PATTERN ===');
         
         $stagingTableName = null;
+        $totalRows = 0;
+        $chunksInserted = 0;
+        $cancelKey = null;
+        $csvPath = null;
+        $csvHandle = null;
+        $useBulkInsert = false;
+        $rowsSinceLog = 0;
         
         try {
+            // Allow PHP to notice when client disconnects so we can stop early
+            @ignore_user_abort(false);
+            @set_time_limit(0);
+            @ini_set('max_execution_time', '0');
             $validated = $request->validate([
-                'data_file' => ['required', File::types(['xlsx', 'xls'])],
+                'data_file' => ['required', File::types(['xlsx', 'xls'])->max(40960)], // 40 MB
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
                 'selected_columns' => ['nullable', 'string'],
                 'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
@@ -708,6 +1151,10 @@ class MappingController extends Controller
             
             // Automatically use today's date as period_date
             $periodDate = now()->toDateString();
+            // Use ISO 8601 (T separator) for datetime to keep SQL Server bulk insert happy
+            $nowString = now()->format('Y-m-d\\TH:i:s.v');
+            // Remove delimiter/newlines that could break bulk parsing
+            $nowStringSanitized = str_replace(['|', "\r", "\n"], ' ', $nowString);
             Log::info("Menggunakan period_date: {$periodDate}");
 
             $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
@@ -718,6 +1165,10 @@ class MappingController extends Controller
                     'message' => 'Format tidak ditemukan.'
                 ]);
             }
+
+            // Build cancel key (one active upload per mapping per user)
+            $cancelKey = 'upload_cancel_' . $mapping->id . '_' . Auth::id();
+            Cache::forget($cancelKey);
 
             $mainTableName = $mapping->table_name;
             $headerRow = $mapping->header_row;
@@ -730,6 +1181,7 @@ class MappingController extends Controller
                 'table_name' => $mainTableName,
                 'header_row' => $headerRow,
                 'upload_mode' => $uploadMode,
+                'driver' => DB::connection()->getDriverName(),
             ]);
 
             if (!$mainTableName || !Schema::hasTable($mainTableName)) {
@@ -782,193 +1234,369 @@ class MappingController extends Controller
             $columnMapping = $mappingRules->pluck('table_column_name', 'excel_column_index')->toArray();
             Log::info('Column mapping:', $columnMapping);
 
-            // Read Excel and pick the right sheet
-            $sheets = $this->loadSheets($request->file('data_file'));
+            // Determine sheet (use provided or first)
+            $sheetName = $validated['sheet_name'] ?? ($this->listWorksheetNames($request->file('data_file'))[0] ?? 'Sheet1');
+            Log::info('Sheet selected for upload: ' . $sheetName);
 
-            if (empty($sheets)) {
+            // Read header row only (for validation)
+            $headers = $this->loadHeaderRow($request->file('data_file'), $headerRowIndex, $sheetName);
+            if (empty($headers)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'File Excel tidak memiliki sheet yang bisa dibaca.'
+                    'message' => "Sheet '{$sheetName}' tidak memiliki header pada baris {$headerRow}.",
                 ]);
             }
 
-            $expectedHeaders = $this->buildExpectedHeaders($mapping->columns);
-            $selection = $this->determineSheetSelection(
-                $sheets,
-                $expectedHeaders,
-                $headerRowIndex,
-                $validated['sheet_name'] ?? null
-            );
-
-            $excelData = $selection['sheet']['rows'];
-            Log::info('Total rows in selected sheet: ' . $excelData->count(), [
-                'selected_sheet' => $selection['sheet_name'],
-                'auto_selected' => $selection['auto_selected'],
-                'sheet_matches' => $selection['matches'],
-            ]);
-
-            if ($excelData->count() <= $headerRowIndex) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Sheet '{$selection['sheet_name']}' tidak memiliki baris header ke-{$headerRow}.",
-                ]);
+            // Stream data rows after header
+            $excelPath = $request->file('data_file')->getPathname();
+            $aborted = false;
+            // Use a pipe delimiter for SQL Server bulk insert to avoid commas inside data shifting columns
+            $bulkDelimiter = '|';
+            $orderedColumns = array_values($columnMapping);
+            $stagingColumns = array_merge($orderedColumns, ['period_date', 'created_at', 'updated_at']);
+            $columnIndexes = [];
+            foreach ($columnMapping as $excelColumn => $dbColumn) {
+                // PhpSpreadsheet column index is 1-based
+                $columnIndexes[$dbColumn] = $this->columnLetterToIndex($excelColumn) + 1;
             }
-
-            // Get data rows (skip header)
-            $dataRows = $excelData->slice($headerRow);
-            Log::info('Data rows after header: ' . $dataRows->count());
-
-            $dataToProcess = [];
-            $rowNumber = $headerRow + 1;
-
-            foreach ($dataRows as $row) {
-                // Skip empty rows
-                if ($row->filter()->isEmpty()) {
-                    Log::debug("Row {$rowNumber}: Empty, skipped");
-                    $rowNumber++;
-                    continue;
-                }
-                
-                $rowData = [];
-                
-                // Map each Excel column to database column
-                foreach ($columnMapping as $excelColumn => $dbColumn) {
-                    $columnIndex = ord(strtoupper($excelColumn)) - ord('A');
-                    $value = $row[$columnIndex] ?? null;
-                    
-                    // Convert Excel date serial number to readable date format
-                    $value = $this->convertExcelDate($value);
-                    
-                    $rowData[$dbColumn] = $value;
-                    
-                    Log::debug("Row {$rowNumber}: Col {$excelColumn}(idx:{$columnIndex}) -> {$dbColumn} = " . var_export($value, true));
-                }
-
-                if (!empty($rowData)) {
-                    // Add period_date, created_at, and updated_at
-                    $rowData['period_date'] = $periodDate;
-                    $rowData['created_at'] = now();
-                    $rowData['updated_at'] = now();
-                    $dataToProcess[] = $rowData;
-                }
-                
-                $rowNumber++;
-            }
-
-            Log::info('Total rows to process: ' . count($dataToProcess));
-
-            if (empty($dataToProcess)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Tidak ada data valid yang dapat diimpor dari file.'
-                ]);
-            }
+            $dataStartRow = max(1, $headerRow + 1); // 1-based row where data begins
+            $sheetRowCount = $this->getWorksheetRowCount($request->file('data_file'), $sheetName);
 
             // ========================================
             // STAGING TABLE PATTERN IMPLEMENTATION
             // ========================================
             
+            $driver = DB::connection()->getDriverName();
+
             // Step 1: Create staging table with unique random name
             $stagingTableName = 'staging_' . $mainTableName . '_' . Str::random(8);
             Log::info("Step 1: Creating staging table: {$stagingTableName}");
             
             // Create staging table with identical structure INCLUDING unique constraint
-            Schema::create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns) {
-                $table->id();
-                
+            Schema::create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns, $driver, $uploadMode) {
                 // Add all mapped columns as text/nullable (same as main table)
                 foreach ($columnMapping as $dbColumn) {
-                    $table->text($dbColumn)->nullable();
+                    if (in_array($dbColumn, $uniqueKeyColumns, true)) {
+                        $table->string($dbColumn, 450)->nullable();
+                    } else {
+                        $table->text($dbColumn)->nullable();
+                    }
                 }
                 
                 $table->date('period_date')->nullable();
-
-                $table->timestamps();
+                // Keep timestamps as strings to avoid bulk insert conversion issues
+                $table->string('created_at', 30)->nullable();
+                $table->string('updated_at', 30)->nullable();
                 
                 // Add unique constraint if there are unique key columns for UPSERT mode
-                if (!empty($uniqueKeyColumns)) {
+                if (!empty($uniqueKeyColumns) && !($driver === 'sqlsrv' && $uploadMode === 'upsert')) {
                     $table->unique($uniqueKeyColumns, 'staging_unique_key_' . Str::random(6));
                     Log::info("Staging table unique constraint created on: " . implode(', ', $uniqueKeyColumns));
                 }
             });
             
             Log::info("Staging table '{$stagingTableName}' created successfully");
-            
-            // Step 2: Insert all data into staging table
-            Log::info("Step 2: Inserting " . count($dataToProcess) . " rows into staging table");
 
-            // SQL Server has a 2100 parameter limit, so chunk inserts accordingly
-            $columnsPerRow = count($columnMapping) + 3; // mapped cols + period_date + timestamps
-            $maxParams = 2000; // keep a small safety margin
-            $chunkSize = max(1, intdiv($maxParams, max(1, $columnsPerRow)));
-
-            $chunks = array_chunk($dataToProcess, $chunkSize);
-            foreach ($chunks as $index => $chunk) {
-                DB::table($stagingTableName)->insert($chunk);
-                Log::info("Inserted chunk " . ($index + 1) . " of " . count($chunks) . " (rows: " . count($chunk) . ")");
+            // SQL Server: use BULK INSERT via temp CSV for speed
+            $useBulkInsert = ($driver === 'sqlsrv');
+            if ($useBulkInsert) {
+                $tmpDir = storage_path('app/tmp');
+                if (!is_dir($tmpDir)) {
+                    mkdir($tmpDir, 0777, true);
+                }
+                $csvPath = $tmpDir . '/bulk_' . $stagingTableName . '_' . Str::random(6) . '.csv';
+                $csvHandle = fopen($csvPath, 'w');
+                if (!$csvHandle) {
+                    throw new \RuntimeException("Gagal membuka file CSV sementara: {$csvPath}");
+                }
             }
-            Log::info("Data successfully inserted into staging table");
+            
+            // Step 2: Stream insert rows into staging to avoid high memory usage
+            Log::info("Step 2: Inserting rows into staging table (streaming)");
+
+            $columnsPerRow = count($stagingColumns);
+            $driver = DB::connection()->getDriverName();
+
+            // Calculate a safe base chunk size from parameter limits
+            $maxParams = $driver === 'sqlsrv' ? 2000 : 10000;
+            $baseChunk = max(1, intdiv($maxParams, max(1, $columnsPerRow)));
+
+            // SQL Server: capped to stay under 1000 row-value limit per INSERT VALUES
+            // Others: still allow larger batches
+            if ($driver === 'sqlsrv') {
+                $chunkSize = 900;
+            } else {
+                $chunkSize = min(2000, max(500, $baseChunk));
+            }
+
+            $chunk = [];
+            $totalRows = 0;
+            $chunksInserted = 0;
+            $rowsSinceLog = 0;
+            $streamStart = microtime(true);
+
+            $reader = IOFactory::createReaderForFile($excelPath);
+            $reader->setReadDataOnly(true);
+            if (method_exists($reader, 'setLoadSheetsOnly')) {
+                $reader->setLoadSheetsOnly([$sheetName]);
+            }
+
+            $chunkRowCount = 5000; // rows per read chunk to control memory
+            $startRow = $dataStartRow;
+
+            while ($startRow <= $sheetRowCount) {
+                if ($cancelKey && Cache::get($cancelKey)) {
+                    Log::warning("Upload canceled via flag before reading chunk starting at row {$startRow}");
+                    $aborted = true;
+                    break;
+                }
+
+                if (function_exists('connection_aborted') && connection_aborted()) {
+                    Log::warning("Upload aborted by client before reading chunk starting at row {$startRow}.");
+                    $aborted = true;
+                    break;
+                }
+
+                $filter = new class($startRow, $chunkRowCount) implements IReadFilter {
+                    public function __construct(private int $startRow, private int $chunkSize) {}
+                    public function readCell($column, $row, $worksheetName = ''): bool
+                    {
+                        return $row >= $this->startRow && $row < ($this->startRow + $this->chunkSize);
+                    }
+                };
+
+                if (method_exists($reader, 'setReadFilter')) {
+                    $reader->setReadFilter($filter);
+                }
+
+                $spreadsheet = $reader->load($excelPath);
+                $worksheet = $spreadsheet->getSheetByName($sheetName) ?? $spreadsheet->getSheet(0);
+
+                $endRow = min($sheetRowCount, $startRow + $chunkRowCount - 1);
+                $processedThisChunk = 0;
+
+                for ($rowIndex = $startRow; $rowIndex <= $endRow; $rowIndex++) {
+                    $rowValues = [];
+                    $isEmpty = true;
+
+                    foreach ($orderedColumns as $dbColumn) {
+                        $colIndex = $columnIndexes[$dbColumn] ?? null;
+                        if ($colIndex === null) {
+                            $rowValues[] = null;
+                            continue;
+                        }
+
+                        $cellValue = $worksheet->getCellByColumnAndRow($colIndex, $rowIndex)->getValue();
+
+                        if (is_string($cellValue)) {
+                            $cellValue = trim($cellValue);
+
+                            // For bulk insert, strip delimiter/newline characters that would break row parsing
+                            if ($useBulkInsert) {
+                                $cellValue = str_replace([$bulkDelimiter, "\r", "\n"], ' ', $cellValue);
+                            }
+                        }
+
+                        if ($cellValue === '') {
+                            $cellValue = null;
+                        }
+
+                        if ($cellValue !== null && $cellValue !== '') {
+                            $isEmpty = false;
+                        }
+
+                        $rowValues[] = $cellValue;
+                    }
+
+                    if ($isEmpty) {
+                        continue;
+                    }
+
+                    // Append audit columns
+                    $rowValues[] = $periodDate;
+                    $rowValues[] = $nowStringSanitized;
+                    $rowValues[] = $nowStringSanitized;
+
+                    if ($useBulkInsert) {
+                        fputcsv($csvHandle, $rowValues, $bulkDelimiter);
+                    } else {
+                        $chunk[] = array_combine($stagingColumns, $rowValues);
+                        if (count($chunk) >= $chunkSize) {
+                            DB::table($stagingTableName)->insert($chunk);
+                            $chunksInserted++;
+                            $chunk = [];
+                            @set_time_limit(0);
+                        }
+                    }
+
+                    $totalRows++;
+                    $rowsSinceLog++;
+                    $processedThisChunk++;
+
+                    if ($rowsSinceLog >= 5000) {
+                        Log::info("Upload progress: {$totalRows} rows processed so far (chunk size {$chunkSize})");
+                        $rowsSinceLog = 0;
+                    }
+                }
+
+                $spreadsheet->disconnectWorksheets();
+                unset($spreadsheet);
+                gc_collect_cycles();
+
+                if ($processedThisChunk === 0) {
+                    // No data in this chunk; stop early
+                    break;
+                }
+
+                $startRow += $chunkRowCount;
+            }
+
+            $streamDuration = round(microtime(true) - $streamStart, 2);
+            Log::info("Streaming finished: {$totalRows} rows written" . ($useBulkInsert ? " to CSV {$csvPath}" : '') . " in {$streamDuration}s");
+
+            if ($useBulkInsert && $csvHandle) {
+                fclose($csvHandle);
+                $csvHandle = null;
+            }
+
+            if (!$useBulkInsert && !$aborted && !empty($chunk)) {
+                DB::table($stagingTableName)->insert($chunk);
+                $chunksInserted++;
+            }
+
+            if ($aborted) {
+                Log::warning("Upload aborted; cleaning up staging table {$stagingTableName}");
+                if ($csvPath && file_exists($csvPath)) {
+                    @unlink($csvPath);
+                }
+                Schema::dropIfExists($stagingTableName);
+                if ($cancelKey) {
+                    Cache::forget($cancelKey);
+                }
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Upload dibatalkan.'
+                ], 499); // 499 = Client Closed Request (nginx convention)
+            }
+
+            if ($totalRows === 0) {
+                if ($csvPath && file_exists($csvPath)) {
+                    @unlink($csvPath);
+                }
+                Schema::dropIfExists($stagingTableName);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada data valid yang dapat diimpor dari file.'
+                ]);
+            }
+
+            // SQL Server bulk insert from CSV if enabled
+            if ($useBulkInsert && $csvPath) {
+                $pathForSql = str_replace('\\', '\\\\', $csvPath);
+                $pathForSql = str_replace("'", "''", $pathForSql);
+                // Use BULK INSERT without column list; staging table is built to match CSV column order
+                $bulkSql = "BULK INSERT [{$stagingTableName}]
+                            FROM '{$pathForSql}'
+                            WITH (
+                                FIRSTROW = 1,
+                                FIELDTERMINATOR = '{$bulkDelimiter}',
+                                ROWTERMINATOR = '0x0a',
+                                KEEPNULLS,
+                                CODEPAGE = '65001',
+                                TABLOCK
+                            )";
+                Log::info("Executing BULK INSERT from {$csvPath}");
+                DB::statement($bulkSql);
+                @unlink($csvPath);
+                Log::info("BULK INSERT completed for {$stagingTableName} (rows: {$totalRows})");
+            }
+
+            Log::info('Total rows to process: ' . $totalRows . " | chunks: {$chunksInserted} | chunkSize: {$chunkSize}");
             
             // Step 3: Atomic transaction to sync from staging to main table
             Log::info("Step 3: Starting atomic transaction to sync data");
             
+            $driver = DB::connection()->getDriverName();
             DB::beginTransaction();
             
             try {
                 if ($uploadMode === 'strict') {
                     // STRICT MODE: Delete data with same period_date, then insert all from staging
-                    // Using atomic operation to minimize blank data window
                     Log::info("STRICT MODE: Deleting data with period_date = '{$periodDate}' from main table '{$mainTableName}'");
                     
-                    // Build column list for INSERT SELECT (excluding id to let it auto-increment)
                     $columns = array_merge(array_values($columnMapping), ['period_date', 'created_at', 'updated_at']);
-                    $columnsList = implode(', ', array_map(fn($col) => '"' . $col . '"', $columns));
                     
-                    // Execute DELETE and INSERT in single atomic transaction
-                    // This minimizes the time window where data might appear blank
-                    DB::statement("DELETE FROM \"{$mainTableName}\" WHERE period_date = ?", [$periodDate]);
+                    // Remove existing rows for the same period and replace with staging data
+                    DB::table($mainTableName)
+                        ->whereDate('period_date', $periodDate)
+                        ->delete();
+
+                    // If table becomes empty, reset identity so IDs start from 1 on next insert
+                    $remainingRows = DB::table($mainTableName)->count();
+                    if ($remainingRows === 0) {
+                        $this->resetIdentity($mainTableName);
+                        Log::info("STRICT MODE: Identity reset because table '{$mainTableName}' kosong setelah delete");
+                    }
                     
-                    $sql = "INSERT INTO \"{$mainTableName}\" ({$columnsList}) 
-                            SELECT {$columnsList} FROM \"{$stagingTableName}\"";
-                    
-                    DB::statement($sql);
+                    DB::table($mainTableName)->insertUsing(
+                        $columns,
+                        DB::table($stagingTableName)->select($columns)
+                    );
                     
                     Log::info("STRICT MODE: Successfully replaced data for period {$periodDate}");
-                    $message = count($dataToProcess) . " baris data berhasil diimpor ke tabel '{$mainTableName}' (Mode Strict: Data period {$periodDate} di-replace).";
+                    $message = $totalRows . " baris data berhasil diimpor ke tabel '{$mainTableName}' (Mode Strict: Data period {$periodDate} di-replace).";
                     
                 } else {
-                    // UPSERT MODE: Use ON CONFLICT DO UPDATE
-                    Log::info("UPSERT MODE: Using ON CONFLICT for unique keys: " . implode(', ', $uniqueKeyColumns));
-                    
-                    // Build columns list (excluding id for insert)
+                    // UPSERT MODE
                     $dataColumns = array_values($columnMapping);
                     $allColumns = array_merge($dataColumns, ['period_date', 'created_at', 'updated_at']);
                     
-                    // Build conflict target (unique key columns)
-                    $conflictTarget = implode(', ', array_map(fn($col) => '"' . $col . '"', $uniqueKeyColumns));
-                    
-                    // Build UPDATE SET clause (update data columns and updated_at, but NOT period_date and created_at)
-                    // period_date should remain as the original entry date, not be updated
-                    $updateClauses = [];
-                    foreach ($dataColumns as $col) {
-                        $updateClauses[] = "\"{$col}\" = EXCLUDED.\"{$col}\"";
+                    if ($driver === 'sqlsrv') {
+                        // SQL Server uses MERGE for upsert
+                    Log::info("UPSERT MODE: Using MERGE for unique keys: " . implode(', ', $uniqueKeyColumns));
+                        
+                        $onClause = implode(' AND ', array_map(fn($col) => "target.[{$col}] = source.[{$col}]", $uniqueKeyColumns));
+                        $updateSetParts = array_map(fn($col) => "target.[{$col}] = source.[{$col}]", $dataColumns);
+                        $updateSetParts[] = "target.[updated_at] = source.[updated_at]";
+                        $updateSet = implode(', ', $updateSetParts);
+                        
+                        $insertColumns = implode(', ', array_map(fn($col) => "[{$col}]", $allColumns));
+                        $insertValues = implode(', ', array_map(fn($col) => "source.[{$col}]", $allColumns));
+                        
+                        $mergeSql = "MERGE INTO [{$mainTableName}] AS target
+                                     USING [{$stagingTableName}] AS source
+                                     ON {$onClause}
+                                     WHEN MATCHED THEN
+                                         UPDATE SET {$updateSet}
+                                     WHEN NOT MATCHED BY TARGET THEN
+                                         INSERT ({$insertColumns}) VALUES ({$insertValues});";
+                        
+                        DB::statement($mergeSql);
+                    } else {
+                        // PostgreSQL / others: use ON CONFLICT
+                        Log::info("UPSERT MODE: Using ON CONFLICT for unique keys: " . implode(', ', $uniqueKeyColumns));
+                        
+                        $conflictTarget = implode(', ', array_map(fn($col) => '"' . $col . '"', $uniqueKeyColumns));
+                        
+                        // Update data columns and updated_at, keep period_date and created_at from original record
+                        $updateClauses = [];
+                        foreach ($dataColumns as $col) {
+                            $updateClauses[] = "\"{$col}\" = EXCLUDED.\"{$col}\"";
+                        }
+                        $updateClauses[] = "\"updated_at\" = EXCLUDED.\"updated_at\"";
+                        $updateSet = implode(', ', $updateClauses);
+                        
+                        $columnsList = implode(', ', array_map(fn($col) => '"' . $col . '"', $allColumns));
+                        
+                        $sql = "INSERT INTO \"{$mainTableName}\" ({$columnsList}) 
+                                SELECT {$columnsList} FROM \"{$stagingTableName}\"
+                                ON CONFLICT ({$conflictTarget}) DO UPDATE SET {$updateSet}";
+                        
+                        DB::statement($sql);
                     }
-                    // Only update updated_at, keep period_date and created_at from original record
-                    $updateClauses[] = "\"updated_at\" = EXCLUDED.\"updated_at\"";
-                    $updateSet = implode(', ', $updateClauses);
                     
-                    // Build column list for INSERT
-                    $columnsList = implode(', ', array_map(fn($col) => '"' . $col . '"', $allColumns));
-                    
-                    // Execute INSERT ... ON CONFLICT DO UPDATE
-                    $sql = "INSERT INTO \"{$mainTableName}\" ({$columnsList}) 
-                            SELECT {$columnsList} FROM \"{$stagingTableName}\"
-                            ON CONFLICT ({$conflictTarget}) DO UPDATE SET {$updateSet}";
-                    
-                    DB::statement($sql);
-                    
-                    Log::info("UPSERT MODE: Successfully synced data using ON CONFLICT (period_date preserved for existing records)");
-                    $message = count($dataToProcess) . " baris data berhasil diproses ke tabel '{$mainTableName}' (Mode Upsert: period_date tetap untuk data yang sudah ada).";
+                    Log::info("UPSERT MODE: Successfully synced data (period_date preserved for existing records)");
+                    $message = $totalRows . " baris data berhasil diproses ke tabel '{$mainTableName}' (Mode Upsert: period_date tetap untuk data yang sudah ada).";
                 }
                 
                 // Commit transaction
@@ -979,6 +1607,14 @@ class MappingController extends Controller
                 DB::rollBack();
                 Log::error('=== TRANSAKSI DI-ROLLBACK ===');
                 Log::error('Sync error: ' . $e->getMessage());
+                Log::error('Sync context', [
+                    'upload_mode' => $uploadMode,
+                    'unique_keys' => $uniqueKeyColumns,
+                    'total_rows' => $totalRows,
+                    'chunks_inserted' => $chunksInserted ?? null,
+                    'staging_table' => $stagingTableName,
+                    'main_table' => $mainTableName,
+                ]);
                 throw $e; // Re-throw to outer catch block
             }
             
@@ -993,7 +1629,7 @@ class MappingController extends Controller
                 'division_id' => Auth::user()->division_id,
                 'mapping_index_id' => $mapping->id,
                 'file_name' => $request->file('data_file')->getClientOriginalName(),
-                'rows_imported' => count($dataToProcess),
+                'rows_imported' => $totalRows,
                 'status' => 'success',
                 'error_message' => null,
             ]);
@@ -1003,10 +1639,18 @@ class MappingController extends Controller
                 'success' => true,
                 'message' => $message
             ]);
-
         } catch (\Exception $e) {
             Log::error('=== UPLOAD FAILED ===');
-            Log::error('Upload error: ' . $e->getMessage());
+            Log::error('Upload error: ' . $e->getMessage(), [
+                'user_id' => Auth::id(),
+                'mapping_id' => $request->input('mapping_id'),
+                'upload_mode' => $request->input('upload_mode'),
+                'selected_columns' => $request->input('selected_columns'),
+                'sheet_name' => $request->input('sheet_name'),
+                'rows_processed' => $totalRows,
+                'chunks_inserted' => $chunksInserted ?? null,
+                'file' => $request->file('data_file')?->getClientOriginalName(),
+            ]);
             Log::error('Stack trace: ' . $e->getTraceAsString());
             Log::error('File: ' . $e->getFile());
             Log::error('Line: ' . $e->getLine());
@@ -1021,11 +1665,46 @@ class MappingController extends Controller
                     Log::error("Failed to drop staging table in cleanup: " . $cleanupError->getMessage());
                 }
             }
+
+            if ($csvPath && file_exists($csvPath)) {
+                @unlink($csvPath);
+            }
             
+            if ($cancelKey) {
+                Cache::forget($cancelKey);
+            }
+
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal upload data: ' . $e->getMessage()
             ]);
         }
+    }
+
+    /**
+     * Set cancel flag for an in-progress upload (per mapping per user).
+     */
+    public function cancelUpload(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
+        ]);
+
+        $mapping = MappingIndex::find($validated['mapping_id']);
+        if (!$mapping) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format tidak ditemukan.'
+            ], 404);
+        }
+
+        $cancelKey = 'upload_cancel_' . $mapping->id . '_' . Auth::id();
+        Cache::put($cancelKey, true, now()->addMinutes(10));
+        Log::warning("Upload cancel flag set for mapping {$mapping->id} by user " . Auth::id());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Upload dibatalkan (flag diset).'
+        ]);
     }
 }

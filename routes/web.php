@@ -38,6 +38,10 @@ Route::middleware('auth')->group(function () {
         // Process upload
         Route::post('/upload/process', [MappingController::class, 'uploadData'])
             ->name('upload.process');
+
+        // Cancel upload (sets cancel flag)
+        Route::post('/upload/cancel', [MappingController::class, 'cancelUpload'])
+            ->name('upload.cancel');
     });
 
     // Register format routes
@@ -46,6 +50,12 @@ Route::middleware('auth')->group(function () {
             ->name('mapping.register.form');
         Route::post('/register-format', [MappingController::class, 'processRegisterForm'])
             ->name('mapping.register.process');
+        Route::post('/register-format/headers', [MappingController::class, 'extractHeaders'])
+            ->name('mapping.register.headers');
+        Route::delete('/mapping/{mapping}/data', [MappingController::class, 'clearData'])
+            ->name('mapping.clear.data');
+        Route::delete('/mapping/{mapping}', [MappingController::class, 'destroy'])
+            ->name('mapping.destroy');
     });
 
     Route::get('/formats', [MappingController::class, 'index'])

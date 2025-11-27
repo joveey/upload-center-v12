@@ -20,16 +20,17 @@ class ExportController extends Controller
         $user = Auth::user(); 
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
 
-        if (!$user->hasRole('super-admin') && $mapping->division_id !== $user->division_id) {
+        if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
             abort(403, 'Anda tidak memiliki akses untuk export format ini.');
         }
 
         $tableName = $mapping->table_name;
         
         // Get column mapping: excel_column => table_column_name
-        $columnMapping = $mapping->columns->sortBy(function($col) {
-            return ord($col->excel_column_index);
-        })->pluck('table_column_name', 'excel_column_index')->toArray();
+        $columnMapping = $mapping->columns
+            ->sortBy(fn($col) => $this->columnLetterToIndex($col->excel_column_index))
+            ->pluck('table_column_name', 'excel_column_index')
+            ->toArray();
 
         if (empty($columnMapping)) {
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
@@ -56,7 +57,7 @@ class ExportController extends Controller
 
         $query = DB::table($tableName)->select($selectColumns);
         
-        if (!$user->hasRole('super-admin')) {
+        if (!$this->userHasRole($user, 'super-admin')) {
             if (in_array('division_id', $actualTableColumns)) {
                 $query->where('division_id', $user->division_id);
             }
@@ -211,5 +212,30 @@ class ExportController extends Controller
             $columnNumber = ($columnNumber - $temp - 1) / 26;
         }
         return $letter;
+    }
+
+    /**
+     * Convert Excel column letters (A, Z, AA, AB, etc.) into zero-based numeric index.
+     */
+    private function columnLetterToIndex(string $column): int
+    {
+        $column = strtoupper(trim($column));
+
+        if ($column === '') {
+            return 0;
+        }
+
+        $index = 0;
+        $length = strlen($column);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $column[$i];
+            if ($char < 'A' || $char > 'Z') {
+                continue;
+            }
+            $index = ($index * 26) + (ord($char) - ord('A') + 1);
+        }
+
+        return max(0, $index - 1);
     }
 }

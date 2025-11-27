@@ -103,7 +103,7 @@
                         </div>
                         
                         <!-- Column Mapping Section with Unique Key Checkbox -->
-                        <div x-data="{ mappings: [{ excel_column: '', db_column: '', is_unique: false }] }" class="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                        <div x-data="mappingForm()" class="bg-gray-50 rounded-lg p-6 border border-gray-200">
                             <div class="flex items-center justify-between mb-4">
                                 <h4 class="text-lg font-bold text-gray-900 flex items-center">
                                     <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -116,6 +116,37 @@
                                 </span>
                             </div>
                             <p class="text-sm text-gray-600 mb-4">Tentukan kolom Excel (A, B, C) dan nama kolom yang akan dibuat di tabel database.</p>
+
+                            <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm font-semibold text-amber-800">Ambil header dari file Excel</p>
+                                        <p class="text-xs text-amber-700">Upload contoh file, sistem akan mengisi kolom otomatis. Anda tetap bisa edit/ubah nama kolom & kunci unik.</p>
+                                    </div>
+                                    <div class="text-xs text-amber-700" x-text="sheetInfo ? ('Sheet: ' + sheetInfo) : ''"></div>
+                                </div>
+                                <div class="flex flex-col md:flex-row md:items-center md:space-x-3 space-y-2 md:space-y-0">
+                                    <input type="file" x-ref="headerFile" accept=".xlsx,.xls" class="hidden" @change="onHeaderFileChange">
+                                    <button type="button" @click="$refs.headerFile.click()" class="inline-flex items-center px-4 py-2 bg-white text-amber-800 border border-amber-300 rounded-lg text-sm font-semibold hover:bg-amber-100 transition shadow-sm">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                        </svg>
+                                        Pilih File Header
+                                    </button>
+                                    <span class="text-sm text-amber-800 font-medium" x-text="headerFileName || 'Belum ada file'"></span>
+                                    <button type="button" @click="fetchHeaders" :disabled="loadingHeaders" class="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-60 transition shadow">
+                                        <span x-show="!loadingHeaders">Ambil & Isi Kolom</span>
+                                        <span x-show="loadingHeaders" class="flex items-center">
+                                            <svg class="animate-spin h-4 w-4 mr-2 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Memproses...
+                                        </span>
+                                    </button>
+                                </div>
+                                <p class="text-xs text-amber-700">Header diambil dari baris ke- <span class="font-semibold" x-text="document.getElementById('header_row')?.value || 1"></span>. Anda bisa ubah baris lalu klik ambil lagi.</p>
+                            </div>
 
                             <div class="space-y-3">
                                 <template x-for="(mapping, index) in mappings" :key="index">
@@ -295,3 +326,96 @@
         });
     </script>
 </x-app-layout>
+
+<script>
+    function mappingForm() {
+        return {
+            mappings: [{ excel_column: '', db_column: '', is_unique: false }],
+            headerFileName: '',
+            loadingHeaders: false,
+            sheetInfo: '',
+            slugifyHeader(text) {
+                return (text || '')
+                    .toString()
+                    .trim()
+                    .replace(/[_\s]+/g, ' ')
+                    .replace(/[^\w\s]/g, '')
+                    .trim()
+                    .replace(/\s+/g, '_')
+                    .toLowerCase();
+            },
+            onHeaderFileChange(event) {
+                const file = event.target.files[0];
+                this.headerFileName = file ? file.name : '';
+                if (file) {
+                    // Langsung proses setelah memilih file
+                    this.fetchHeaders(true);
+                }
+            },
+            setMappingsFromHeaders(headers) {
+                this.mappings = headers
+                    .filter((item) => (item.header || '').toString().trim() !== '')
+                    .map((item) => {
+                        return {
+                            excel_column: item.excel_column || '',
+                            db_column: this.slugifyHeader(item.header) || '',
+                            is_unique: false,
+                        };
+                    });
+            },
+            async fetchHeaders(autoTriggered = false) {
+                if (this.loadingHeaders) return;
+
+                const fileInput = this.$refs.headerFile;
+                const file = fileInput?.files?.[0];
+                if (!file) {
+                    if (!autoTriggered) {
+                        alert('Pilih file Excel terlebih dahulu.');
+                    }
+                    alert('Pilih file Excel terlebih dahulu.');
+                    return;
+                }
+
+                const headerRow = document.getElementById('header_row')?.value || 1;
+
+                this.loadingHeaders = true;
+                try {
+                    const formData = new FormData();
+                    formData.append('_token', '{{ csrf_token() }}');
+                    formData.append('data_file', file);
+                    formData.append('header_row', headerRow);
+
+                    const response = await fetch('{{ route('mapping.register.headers') }}', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    let data;
+                    if (!response.ok) {
+                        const text = await response.text();
+                        throw new Error(text || 'Gagal memproses file. Pastikan format dan ukuran sesuai.');
+                    } else {
+                        data = await response.json();
+                    }
+                    if (!data.success) {
+                        alert(data.message || 'Gagal membaca header dari file.');
+                        return;
+                    }
+
+                    if (!Array.isArray(data.headers) || data.headers.length === 0) {
+                        alert('Header tidak ditemukan di baris yang dipilih.');
+                        return;
+                    }
+
+                    this.sheetInfo = data.sheet_name || '';
+                    this.setMappingsFromHeaders(data.headers || []);
+                } catch (error) {
+                    console.error(error);
+                    alert(error.message || 'Terjadi kesalahan saat mengambil header.');
+                } finally {
+                    this.loadingHeaders = false;
+                }
+            },
+        };
+    }
+</script>
