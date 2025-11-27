@@ -152,7 +152,7 @@
                                                 Memproses...
                                             </span>
                                         </button>
-                                        <button type="button" @click="openPreview" :disabled="!headerPreview.length" class="inline-flex items-center px-4 py-2 bg-white text-[#0057b7] border border-[#c7d9f3] rounded-lg text-sm font-semibold hover:bg-[#e8f1fb] disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm">
+                                        <button type="button" @click="openPreview" class="inline-flex items-center px-4 py-2 bg-white text-[#0057b7] border border-[#c7d9f3] rounded-lg text-sm font-semibold hover:bg-[#e8f1fb] transition shadow-sm">
                                             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m-2 6h8m-4 2v6m-4-6h8a4 4 0 010 8H7a4 4 0 010-8z"></path>
                                             </svg>
@@ -273,6 +273,7 @@
                                             <div class="flex items-center space-x-2">
                                                 <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-[#e8f1fb] text-[#004a99] font-bold" x-text="item.excel_column || '-'"></span>
                                                 <span x-text="item.header || '-'"></span>
+                                                <span x-show="item.is_unique" class="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full">Unique</span>
                                             </div>
                                         </th>
                                     </template>
@@ -389,6 +390,14 @@
             sheetInfo: '',
             headerPreview: [],
             showHeaderModal: false,
+            toExcelCol(idx) {
+                let n = idx, s = '';
+                while (n >= 0) {
+                    s = String.fromCharCode((n % 26) + 65) + s;
+                    n = Math.floor(n / 26) - 1;
+                }
+                return s;
+            },
             slugifyHeader(text) {
                 return (text || '')
                     .toString()
@@ -408,20 +417,12 @@
                 }
             },
             setMappingsFromHeaders(headers) {
-                const toExcelCol = (idx) => {
-                    let n = idx, s = '';
-                    while (n >= 0) {
-                        s = String.fromCharCode((n % 26) + 65) + s;
-                        n = Math.floor(n / 26) - 1;
-                    }
-                    return s;
-                };
-
                 const cleanHeaders = headers.filter((item) => (item.header || '').toString().trim() !== '');
                 this.headerPreview = cleanHeaders.map((item, idx) => ({
-                    excel_column: item.excel_column || item.excel_column_index || toExcelCol(idx),
+                    excel_column: item.excel_column || item.excel_column_index || this.toExcelCol(idx),
                     header: item.header || '',
                     slug: this.slugifyHeader(item.header || ''),
+                    is_unique: false,
                 }));
                 this.mappings = cleanHeaders.map((item) => ({
                     excel_column: item.excel_column || '',
@@ -429,9 +430,26 @@
                     is_unique: false,
                 }));
             },
+            syncPreviewFromMappings() {
+                if (!this.mappings.length) {
+                    this.headerPreview = [];
+                    return;
+                }
+                const filtered = this.mappings
+                    .map((item, idx) => ({
+                        excel_column: item.excel_column || this.toExcelCol(idx),
+                        header: item.db_column || '',
+                        slug: this.slugifyHeader(item.db_column || ''),
+                        is_unique: !!item.is_unique,
+                    }))
+                    .filter((item) => (item.header || '').trim() !== '' || (item.excel_column || '').trim() !== '');
+                this.headerPreview = filtered;
+            },
             openPreview() {
+                // Always sync with current mappings so manual input also shows
+                this.syncPreviewFromMappings();
                 if (!this.headerPreview.length) {
-                    alert('Header belum tersedia. Unggah file header terlebih dahulu.');
+                    alert('Header belum tersedia. Isi kolom atau unggah file header terlebih dahulu.');
                     return;
                 }
                 this.showHeaderModal = true;
