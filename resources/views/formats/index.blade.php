@@ -280,41 +280,41 @@
 </x-app-layout>
 
 <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            document.querySelectorAll('.btn-delete-format').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    const name = btn.dataset.name || 'format';
-                    const firstConfirm = confirm(`Hapus format "${name}" beserta tabel datanya?`);
-                    if (!firstConfirm) {
-                        return;
-                    }
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.btn-delete-format').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const name = btn.dataset.name || 'format';
+                const firstConfirm = confirm(`Hapus format "${name}" beserta tabel datanya?`);
+                if (!firstConfirm) {
+                    return;
+                }
 
-                    const secondConfirm = prompt('Ketik KONFIRMASI untuk konfirmasi kedua:');
-                    if (!secondConfirm || secondConfirm.trim().toUpperCase() !== 'KONFIRMASI') {
-                        alert('Penghapusan dibatalkan karena konfirmasi kedua tidak sesuai.');
-                        return;
-                    }
+                const secondConfirm = prompt('Ketik KONFIRMASI untuk konfirmasi kedua:');
+                if (!secondConfirm || secondConfirm.trim().toUpperCase() !== 'KONFIRMASI') {
+                    alert('Penghapusan dibatalkan karena konfirmasi kedua tidak sesuai.');
+                    return;
+                }
 
-                    btn.closest('form').submit();
-                });
+                btn.closest('form').submit();
             });
+        });
 
-            document.querySelectorAll('.btn-clear-data').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    const name = btn.dataset.name || 'format';
-                    const table = btn.dataset.table || 'tabel';
-                    const firstConfirm = confirm(`Hapus semua isi data untuk format "${name}" (tabel ${table})?`);
-                    if (!firstConfirm) {
-                        return;
-                    }
+        document.querySelectorAll('.btn-clear-data').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const name = btn.dataset.name || 'format';
+                const table = btn.dataset.table || 'tabel';
+                const firstConfirm = confirm(`Hapus semua isi data untuk format "${name}" (tabel ${table})?`);
+                if (!firstConfirm) {
+                    return;
+                }
 
-                    const secondConfirm = prompt('Ketik KONFIRMASI untuk konfirmasi kedua:');
-                    if (!secondConfirm || secondConfirm.trim().toUpperCase() !== 'KONFIRMASI') {
-                        alert('Penghapusan dibatalkan karena konfirmasi kedua tidak sesuai.');
-                        return;
-                    }
+                const secondConfirm = prompt('Ketik KONFIRMASI untuk konfirmasi kedua:');
+                if (!secondConfirm || secondConfirm.trim().toUpperCase() !== 'KONFIRMASI') {
+                    alert('Penghapusan dibatalkan karena konfirmasi kedua tidak sesuai.');
+                    return;
+                }
 
-                    btn.closest('form').submit();
+                btn.closest('form').submit();
             });
         });
     });

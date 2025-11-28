@@ -29,6 +29,33 @@
                     </svg>
                     Export Excel
                 </a>
+                @can('register format')
+                    <form method="POST" action="{{ route('mapping.clear.data', $mapping->id) }}">
+                        @csrf
+                        @method('DELETE')
+                        <button type="button"
+                                class="inline-flex items-center px-4 py-2.5 bg-white/95 text-[#8c5800] border border-amber-200 hover:border-amber-300 hover:bg-amber-50 rounded-lg font-semibold text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-amber-200 transition-all duration-200 shadow-sm hover:shadow-md group btn-clear-data"
+                                data-name="{{ $mapping->description ?? $mapping->code }}"
+                                data-table="{{ $mapping->table_name }}">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-6 4h6m-8 4h10a2 2 0 002-2V7a2 2 0 00-2-2h-3.586a1 1 0 01-.707-.293l-1.414-1.414A1 1 0 0010.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                            </svg>
+                            Hapus Isi
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ route('mapping.destroy', $mapping->id) }}">
+                        @csrf
+                        @method('DELETE')
+                        <button type="button" 
+                                class="inline-flex items-center px-4 py-2.5 bg-gradient-to-r from-[#d7263d] to-[#b31217] hover:from-[#b31217] hover:to-[#8f0e12] border border-transparent rounded-lg font-bold text-sm text-white tracking-wide focus:outline-none focus:ring-2 focus:ring-red-300 transition-all duration-200 shadow-md hover:shadow-lg group btn-delete-format"
+                                data-name="{{ $mapping->description ?? $mapping->code }}">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5-4h4a1 1 0 011 1v1H9V4a1 1 0 011-1z"></path>
+                            </svg>
+                            Hapus Format
+                        </button>
+                    </form>
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -167,3 +194,44 @@
         </div>
     </div>
 </x-app-layout>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.btn-delete-format').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const name = btn.dataset.name || 'format';
+                const firstConfirm = confirm(`Hapus format "${name}" beserta tabel datanya?`);
+                if (!firstConfirm) {
+                    return;
+                }
+
+                const secondConfirm = prompt('Ketik KONFIRMASI untuk konfirmasi kedua:');
+                if (!secondConfirm || secondConfirm.trim().toUpperCase() !== 'KONFIRMASI') {
+                    alert('Penghapusan dibatalkan karena konfirmasi kedua tidak sesuai.');
+                    return;
+                }
+
+                btn.closest('form').submit();
+            });
+        });
+
+        document.querySelectorAll('.btn-clear-data').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const name = btn.dataset.name || 'format';
+                const table = btn.dataset.table || 'tabel';
+                const firstConfirm = confirm(`Hapus semua isi data untuk format "${name}" (tabel ${table})?`);
+                if (!firstConfirm) {
+                    return;
+                }
+
+                const secondConfirm = prompt('Ketik KONFIRMASI untuk konfirmasi kedua:');
+                if (!secondConfirm || secondConfirm.trim().toUpperCase() !== 'KONFIRMASI') {
+                    alert('Penghapusan dibatalkan karena konfirmasi kedua tidak sesuai.');
+                    return;
+                }
+
+                btn.closest('form').submit();
+            });
+        });
+    });
+</script>
