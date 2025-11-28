@@ -33,6 +33,12 @@ If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Lar
 
 We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
 
+## Local Debugging (Debugbar)
+
+- Enable locally by keeping `APP_DEBUG=true` and optionally setting `DEBUGBAR_ENABLED=true` in your `.env` (see `.env.example`).  
+- Keep production with `APP_DEBUG=false` so the debug bar stays disabled.  
+- The bar shows queries, logs, and timing info per request for troubleshooting during development only.
+
 ### Premium Partners
 
 - **[Vehikl](https://vehikl.com/)**
