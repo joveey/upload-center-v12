@@ -6,17 +6,18 @@ use App\Models\MappingIndex;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Font;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Style;
+use OpenSpout\Writer\XLSX\Writer;
 
 class ExportController extends Controller
 {
     public function export(Request $request, $mappingId)
     {
+        // Long-running export: lift limits a bit
+        @set_time_limit(0);
+        @ini_set('memory_limit', '1024M');
+
         $user = Auth::user(); 
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
 
@@ -68,150 +69,67 @@ class ExportController extends Controller
             $query->where('period_date', $request->period_date);
         }
 
-        $data = $query->get();
-
-        if ($data->isEmpty()) {
+        // Count first to decide output mode
+        $totalCount = (clone $query)->count();
+        if ($totalCount === 0) {
             return back()->with('error', 'Tidak ada data untuk diexport.');
         }
 
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-
-        // Set column widths
-        foreach (array_keys($columnMapping) as $index => $excelCol) {
-            $sheet->getColumnDimension($excelCol)->setAutoSize(true);
-        }
-
-        $row = 1;
-        
-        // ===== ADD HEADER ROW =====
-        $colIndex = 1;
+        $headerRow = [];
         foreach (array_keys($columnMapping) as $excelCol) {
             $dbColumn = $columnMapping[$excelCol];
-            
-            // Write header (using database column name or you can customize)
-            $headerText = ucwords(str_replace('_', ' ', $dbColumn));
-            $sheet->setCellValue($excelCol . $row, $headerText);
-            $colIndex++;
+            $headerRow[] = ucwords(str_replace('_', ' ', $dbColumn));
         }
-        
-        // Add additional columns (period_date, created_at, updated_at)
         if (in_array('period_date', $actualTableColumns)) {
-            $col = $this->getColumnLetter($colIndex);
-            $sheet->setCellValue($col . $row, 'Period Date');
-            $colIndex++;
+            $headerRow[] = 'Period Date';
         }
-        
         if (in_array('created_at', $actualTableColumns)) {
-            $col = $this->getColumnLetter($colIndex);
-            $sheet->setCellValue($col . $row, 'Created At');
-            $colIndex++;
+            $headerRow[] = 'Created At';
         }
-        
         if (in_array('updated_at', $actualTableColumns)) {
-            $col = $this->getColumnLetter($colIndex);
-            $sheet->setCellValue($col . $row, 'Updated At');
-            $colIndex++;
+            $headerRow[] = 'Updated At';
         }
 
-        // Style header row
-        $headerEndCol = $this->getColumnLetter($colIndex - 1);
-
-        $headerRange = 'A1:' . $headerEndCol . '1';
-        $sheet->getStyle($headerRange)->applyFromArray([
-            'font' => [
-                'bold' => true,
-                'color' => ['rgb' => 'FFFFFF'],
-                'size' => 12,
-            ],
-            'fill' => [
-                'fillType' => Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4F46E5'], // Indigo color
-            ],
-            'alignment' => [
-                'horizontal' => Alignment::HORIZONTAL_CENTER,
-                'vertical' => Alignment::VERTICAL_CENTER,
-            ],
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => Border::BORDER_THIN,
-                    'color' => ['rgb' => '000000'],
-                ],
-            ],
-        ]);
-        
-        $row++; // Move to next row for data
-        
-        // ===== ADD DATA ROWS =====
-        foreach ($data as $item) {
-            $colIndex = 1;
-            
-            // Add mapped columns data
-            foreach (array_keys($columnMapping) as $excelCol) {
-                $dbColumn = $columnMapping[$excelCol];
-                $value = $item->{$dbColumn} ?? '';
-                $sheet->setCellValue($excelCol . $row, $value);
-                $colIndex++;
-            }
-
-            // Add additional columns data
-            if (in_array('period_date', $actualTableColumns)) {
-                $col = $this->getColumnLetter($colIndex);
-                $sheet->setCellValue($col . $row, $item->period_date ?? '');
-                $colIndex++;
-            }
-            
-            if (in_array('created_at', $actualTableColumns)) {
-                $col = $this->getColumnLetter($colIndex);
-                $sheet->setCellValue($col . $row, $item->created_at ?? '');
-                $colIndex++;
-            }
-            
-            if (in_array('updated_at', $actualTableColumns)) {
-                $col = $this->getColumnLetter($colIndex);
-                $sheet->setCellValue($col . $row, $item->updated_at ?? '');
-                $colIndex++;
-            }
-
-            $row++;
-        }
-
-        // Apply borders to all data
-        $dataEndCol = $this->getColumnLetter($colIndex - 1);
-
-        $dataRange = 'A1:' . $dataEndCol . ($row - 1);
-        $sheet->getStyle($dataRange)
-            ->getBorders()
-            ->getAllBorders()
-            ->setBorderStyle(Border::BORDER_THIN);
-
-            // Add period to filename if filtered
-        $periodSuffix = '';
-        if ($request->has('period_date') && $request->period_date) {
-            $periodSuffix = '_period_' . $request->period_date;
-        }
-
+        $chunkSize = 2000;
+        // Prefer ordering by primary key if present to ensure deterministic chunking
+        $orderColumn = in_array('id', $actualTableColumns, true)
+            ? 'id'
+            : ($selectColumns[0] ?? $validColumns[0] ?? 'id');
         $fileName = $mapping->code . '_' . date('Y-m-d_His') . '.xlsx';
 
-        $writer = new Xlsx($spreadsheet);
-        
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment;filename="' . $fileName . '"');
-        header('Cache-Control: max-age=0');
+        return response()->streamDownload(function () use ($query, $headerRow, $columnMapping, $actualTableColumns, $chunkSize, $orderColumn) {
+            $writer = new Writer();
+            $writer->openToFile('php://output');
 
-        $writer->save('php://output');
-        exit;
-    }
+            $headerStyle = (new Style())->setFontBold();
+            $writer->addRow(Row::fromValues($headerRow, $headerStyle));
 
-    private function getColumnLetter($columnNumber)
-    {
-        $letter = '';
-        while ($columnNumber > 0) {
-            $temp = ($columnNumber - 1) % 26;
-            $letter = chr($temp + 65) . $letter;
-            $columnNumber = ($columnNumber - $temp - 1) / 26;
-        }
-        return $letter;
+            // SQL Server chunk requires explicit order
+            $query->orderBy($orderColumn)->chunk($chunkSize, function ($rows) use ($writer, $columnMapping, $actualTableColumns) {
+                foreach ($rows as $item) {
+                    $rowData = [];
+                    foreach (array_keys($columnMapping) as $excelCol) {
+                        $dbColumn = $columnMapping[$excelCol];
+                        $rowData[] = $item->{$dbColumn} ?? '';
+                    }
+                    if (in_array('period_date', $actualTableColumns)) {
+                        $rowData[] = $item->period_date ?? '';
+                    }
+                    if (in_array('created_at', $actualTableColumns)) {
+                        $rowData[] = $item->created_at ?? '';
+                    }
+                    if (in_array('updated_at', $actualTableColumns)) {
+                        $rowData[] = $item->updated_at ?? '';
+                    }
+
+                    $writer->addRow(Row::fromValues($rowData));
+                }
+            });
+
+            $writer->close();
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
 
     /**
