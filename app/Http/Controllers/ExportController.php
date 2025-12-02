@@ -21,9 +21,7 @@ class ExportController extends Controller
         $user = Auth::user(); 
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
 
-        if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
-            abort(403, 'Anda tidak memiliki akses untuk export format ini.');
-        }
+        // Export dibuka untuk semua user yang login; pembatasan hanya untuk aksi hapus.
 
         $tableName = $mapping->table_name;
         
