@@ -22,62 +22,64 @@ class DashboardController extends Controller
     public function index(): View
     {
         $user = Auth::user();
-        $mappings = collect();
+        $mappings = MappingIndex::with('division')
+            ->orderBy('description')
+            ->get();
         $uploadStats = null;
-        $divisionUploadCounts = null;
-
-        if ($user && $user->division_id) {
-            // Check if user is superuser
-            if ($user->division->is_super_user) {
-                // Superuser can see all formats from all divisions
-                $mappings = MappingIndex::with('division')
-                    ->orderBy('description')
-                    ->get();
-                
-                // Get upload statistics for superuser
-                $uploadStats = $this->getUploadStatistics();
-                
-                // Get simple upload counts per division
-                $divisionUploadCounts = $this->getDivisionUploadCounts();
-            } else {
-                // Regular user only sees their division's formats
-                $mappings = MappingIndex::where('division_id', $user->division_id)
-                    ->orderBy('description')
-                    ->get();
-            }
-        }
+        $divisionUploadCounts = $this->getDivisionUploadCounts();
+        $recentActivities = \App\Models\UploadLog::with(['mappingIndex', 'user', 'division'])
+            ->latest()
+            ->take(10)
+            ->get();
 
         return view('dashboard', [
             'mappings' => $mappings,
             'uploadStats' => $uploadStats,
             'divisionUploadCounts' => $divisionUploadCounts,
+            'recentActivities' => $recentActivities,
         ]);
     }
 
     /**
-     * Get total upload counts per division
+     * Get total upload counts per division (all divisions, including super-admin)
      */
     private function getDivisionUploadCounts(): array
     {
-        $divisions = \App\Models\Division::where('is_super_user', false)
-            ->orderBy('name')
+        $divisions = \App\Models\Division::pluck('name', 'id');
+
+        $rows = DB::table('upload_logs as ul')
+            ->leftJoin('mapping_indices as mi', 'mi.id', '=', 'ul.mapping_index_id')
+            ->leftJoin('users as u', 'u.id', '=', 'ul.user_id')
+            ->selectRaw('COALESCE(u.division_id, ul.division_id, mi.division_id) as division_id, COUNT(*) as total')
+            ->groupBy(DB::raw('COALESCE(u.division_id, ul.division_id, mi.division_id)'))
             ->get();
-        
+
         $counts = [];
-        foreach ($divisions as $division) {
-            $count = \App\Models\UploadLog::where('division_id', $division->id)
-                ->where('status', 'success')
-                ->count();
-            
-            if ($count > 0) {
-                $counts[] = [
-                    'name' => $division->name,
-                    'count' => $count,
-                ];
+
+        // Aggregate from upload logs
+        foreach ($rows as $row) {
+            $divisionId = $row->division_id;
+            $name = $divisions[$divisionId] ?? 'Tanpa Divisi';
+            $counts[$name] = ($counts[$name] ?? 0) + (int) $row->total;
+        }
+
+        // Fallback: aggregate from actual data tables per mapping division
+        $mappings = \App\Models\MappingIndex::select('id', 'division_id', 'table_name')->get();
+        foreach ($mappings as $mapping) {
+            if ($mapping->table_name && Schema::hasTable($mapping->table_name)) {
+                $rowCount = DB::table($mapping->table_name)->count();
+                if ($rowCount > 0) {
+                    $name = $divisions[$mapping->division_id] ?? 'Tanpa Divisi';
+                    $counts[$name] = ($counts[$name] ?? 0) + $rowCount;
+                }
             }
         }
-        
-        return $counts;
+
+        return collect($counts)
+            ->map(fn ($count, $name) => ['name' => $name, 'count' => $count])
+            ->sortByDesc('count')
+            ->values()
+            ->all();
     }
 
     /**

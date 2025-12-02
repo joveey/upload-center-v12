@@ -169,12 +169,7 @@ class MappingController extends Controller
         $user = Auth::user();
         
         $query = MappingIndex::with('columns', 'division');
-        
-        // Filter by division if not super-admin
-        if (!$this->userHasRole($user, 'super-admin')) {
-            $query->where('division_id', $user->division_id);
-        }
-        
+
         $mappings = $query->orderBy('description')->get();
         
         // Get statistics for each mapping
@@ -183,15 +178,7 @@ class MappingController extends Controller
             
             if (Schema::hasTable($tableName)) {
                 $query = DB::table($tableName);
-                
-                // Filter by division if not super-admin
-                if (!$this->userHasRole($user, 'super-admin')) {
-                    $actualTableColumns = DB::getSchemaBuilder()->getColumnListing($tableName);
-                    if (in_array('division_id', $actualTableColumns)) {
-                        $query->where('division_id', $user->division_id);
-                    }
-                }
-                
+
                 $mapping->row_count = $query->count();
             } else {
                 $mapping->row_count = 0;
@@ -214,7 +201,9 @@ class MappingController extends Controller
 
         // Check permission
         if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
-            abort(403, 'Anda tidak memiliki akses untuk melihat data format ini.');
+            return redirect()
+                ->route('formats.index')
+                ->with('error', 'Akses ditolak: Anda tidak memiliki akses untuk melihat data format ini.');
         }
 
         $tableName = $mapping->table_name;
@@ -702,6 +691,33 @@ class MappingController extends Controller
     }
 
     /**
+     * Drop staging table safely on specific connection and also attempt on legacy/default to ensure cleanup.
+     */
+    private function dropStagingTable(?string $tableName, string $primaryConnection, bool $isCleanup = false): void
+    {
+        if (! $tableName) {
+            return;
+        }
+
+        $connections = array_unique([
+            $primaryConnection,
+            'sqlsrv',
+            'sqlsrv_legacy',
+        ]);
+
+        foreach ($connections as $conn) {
+            try {
+                if (Schema::connection($conn)->hasTable($tableName)) {
+                    Log::info(($isCleanup ? 'Cleanup: ' : '') . "Dropping staging table '{$tableName}' on connection '{$conn}'");
+                    Schema::connection($conn)->dropIfExists($tableName);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("Failed to drop staging table '{$tableName}' on connection '{$conn}': " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
      * Generator to stream rows from a specific sheet starting at given row.
      */
     private function sheetRowGenerator($file, string $sheetName, int $startRow): \Generator
@@ -945,7 +961,9 @@ class MappingController extends Controller
         $user = Auth::user();
 
         if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
-            abort(403, 'Anda tidak memiliki akses untuk format ini.');
+            return redirect()
+                ->route('formats.index')
+                ->with('error', 'Anda tidak memiliki akses untuk menghapus isi format ini.');
         }
 
         $tableName = $mapping->table_name;
@@ -988,7 +1006,9 @@ class MappingController extends Controller
 
         // Only allow same division unless super-admin
         if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
-            abort(403, 'Anda tidak memiliki akses untuk menghapus format ini.');
+            return redirect()
+                ->route('formats.index')
+                ->with('error', 'Anda tidak memiliki akses untuk menghapus format ini.');
         }
 
         $tableName = $mapping->table_name;
@@ -1174,6 +1194,20 @@ class MappingController extends Controller
             $headerRow = $mapping->header_row;
             $headerRowIndex = max(0, $headerRow - 1);
             $uploadMode = $validated['upload_mode'];
+
+            // Tentukan koneksi target; fallback ke legacy jika tabel ada di legacy saja
+            $connection = $mapping->target_connection
+                ?? $mapping->connection
+                ?? config('database.default');
+
+            if (! Schema::connection($connection)->hasTable($mainTableName) && Schema::connection('sqlsrv_legacy')->hasTable($mainTableName)) {
+                $connection = 'sqlsrv_legacy';
+            }
+
+            // Pakai koneksi terpilih untuk semua operasi berikutnya
+            DB::setDefaultConnection($connection);
+            $schema = Schema::connection($connection);
+            $hasPeriodDate = $schema->hasColumn($mainTableName, 'period_date');
             
             Log::info('Mapping info:', [
                 'id' => $mapping->id,
@@ -1182,9 +1216,10 @@ class MappingController extends Controller
                 'header_row' => $headerRow,
                 'upload_mode' => $uploadMode,
                 'driver' => DB::connection()->getDriverName(),
+                'connection' => $connection,
             ]);
 
-            if (!$mainTableName || !Schema::hasTable($mainTableName)) {
+            if (!$mainTableName || ! $schema->hasTable($mainTableName)) {
                 Log::error("Tabel utama tidak ditemukan: {$mainTableName}");
                 return response()->json([
                     'success' => false,
@@ -1224,10 +1259,19 @@ class MappingController extends Controller
             
             Log::info('Unique key columns:', $uniqueKeyColumns);
 
-            // If upsert mode but no unique keys, switch to strict mode automatically
+            $isLegacyConnection = $connection === 'sqlsrv_legacy' || $mapping->connection === 'sqlsrv_legacy' || $mapping->target_connection === 'sqlsrv_legacy';
+
+            // If upsert mode but no unique keys, choose fallback:
+            // - For legacy: append (no delete, just insert)
+            // - For others: strict (replace)
             if ($uploadMode === 'upsert' && empty($uniqueKeyColumns)) {
-                Log::warning('Upsert mode selected but no unique keys defined. Switching to strict mode.');
-                $uploadMode = 'strict';
+                if ($isLegacyConnection) {
+                    Log::warning('Upsert mode selected but no unique keys defined. Switching to append mode for legacy.');
+                    $uploadMode = 'append';
+                } else {
+                    Log::warning('Upsert mode selected but no unique keys defined. Switching to strict mode.');
+                    $uploadMode = 'strict';
+                }
             }
 
             // Create mapping array: excel_column_index => table_column_name
@@ -1253,7 +1297,11 @@ class MappingController extends Controller
             // Use a pipe delimiter for SQL Server bulk insert to avoid commas inside data shifting columns
             $bulkDelimiter = '|';
             $orderedColumns = array_values($columnMapping);
-            $stagingColumns = array_merge($orderedColumns, ['period_date', 'created_at', 'updated_at']);
+            $stagingColumns = array_merge(
+                $orderedColumns,
+                $hasPeriodDate ? ['period_date'] : [],
+                ['created_at', 'updated_at']
+            );
             $columnIndexes = [];
             foreach ($columnMapping as $excelColumn => $dbColumn) {
                 // PhpSpreadsheet column index is 1-based
@@ -1273,7 +1321,7 @@ class MappingController extends Controller
             Log::info("Step 1: Creating staging table: {$stagingTableName}");
             
             // Create staging table with identical structure INCLUDING unique constraint
-            Schema::create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns, $driver, $uploadMode) {
+            Schema::connection($connection)->create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns, $driver, $uploadMode, $hasPeriodDate) {
                 // Add all mapped columns as text/nullable (same as main table)
                 foreach ($columnMapping as $dbColumn) {
                     if (in_array($dbColumn, $uniqueKeyColumns, true)) {
@@ -1283,7 +1331,9 @@ class MappingController extends Controller
                     }
                 }
                 
-                $table->date('period_date')->nullable();
+                if ($hasPeriodDate) {
+                    $table->date('period_date')->nullable();
+                }
                 // Keep timestamps as strings to avoid bulk insert conversion issues
                 $table->string('created_at', 30)->nullable();
                 $table->string('updated_at', 30)->nullable();
@@ -1298,7 +1348,12 @@ class MappingController extends Controller
             Log::info("Staging table '{$stagingTableName}' created successfully");
 
             // SQL Server: use BULK INSERT via temp CSV for speed
-            $useBulkInsert = ($driver === 'sqlsrv');
+            // Only use BULK INSERT on SQL Server default connection (never on legacy connections to avoid codepage/type issues)
+            $useBulkInsert = $driver === 'sqlsrv'
+                && $connection === config('database.default')
+                && $connection !== 'sqlsrv_legacy'
+                && empty($mapping->connection)
+                && empty($mapping->target_connection);
             if ($useBulkInsert) {
                 $tmpDir = storage_path('app/tmp');
                 if (!is_dir($tmpDir)) {
@@ -1405,6 +1460,12 @@ class MappingController extends Controller
                             $isEmpty = false;
                         }
 
+                        // Convert Excel date serials/strings for transaction_date column
+                        if ($dbColumn === 'transaction_date' && $cellValue !== null && $cellValue !== '') {
+                            $converted = $this->convertExcelDate($cellValue);
+                            $cellValue = $converted;
+                        }
+
                         $rowValues[] = $cellValue;
                     }
 
@@ -1413,7 +1474,9 @@ class MappingController extends Controller
                     }
 
                     // Append audit columns
-                    $rowValues[] = $periodDate;
+                    if ($hasPeriodDate) {
+                        $rowValues[] = $periodDate;
+                    }
                     $rowValues[] = $nowStringSanitized;
                     $rowValues[] = $nowStringSanitized;
 
@@ -1520,16 +1583,67 @@ class MappingController extends Controller
             DB::beginTransaction();
             
             try {
-                if ($uploadMode === 'strict') {
+                if ($uploadMode === 'append') {
+                    // APPEND MODE: Insert all staging rows as-is (with safe conversions)
+                    Log::info("APPEND MODE: Inserting data without deletion for table '{$mainTableName}'");
+
+                    $columns = array_merge(
+                        array_values($columnMapping),
+                        $hasPeriodDate ? ['period_date'] : [],
+                        ['created_at', 'updated_at']
+                    );
+
+                    $columnTypes = [];
+                    foreach ($columns as $col) {
+                        try {
+                            $columnTypes[$col] = $schema->getColumnType($mainTableName, $col);
+                        } catch (\Exception $e) {
+                            $columnTypes[$col] = 'string';
+                        }
+                    }
+
+                    $selects = [];
+                    foreach ($columns as $col) {
+                        $type = $columnTypes[$col] ?? 'string';
+                        $expr = "[{$col}]";
+                        if (in_array($type, ['integer', 'bigint', 'smallint', 'tinyint'], true)) {
+                            $expr = "TRY_CONVERT(INT, [{$col}])";
+                        } elseif (in_array($type, ['decimal', 'float', 'double'], true)) {
+                            $expr = "TRY_CONVERT(DECIMAL(18,2), [{$col}])";
+                        } elseif ($type === 'date') {
+                            $expr = "TRY_CONVERT(DATE, [{$col}])";
+                        } elseif ($type === 'datetime' || $type === 'datetimetz') {
+                            $expr = "TRY_CONVERT(DATETIME, [{$col}])";
+                        }
+                        $selects[] = DB::raw("{$expr} as [{$col}]");
+                    }
+
+                    DB::table($mainTableName)->insertUsing(
+                        $columns,
+                        DB::table($stagingTableName)->select($selects)
+                    );
+
+                    $message = $totalRows . " baris data berhasil ditambahkan ke tabel '{$mainTableName}' (Mode Append).";
+
+                } elseif ($uploadMode === 'strict') {
                     // STRICT MODE: Delete data with same period_date, then insert all from staging
                     Log::info("STRICT MODE: Deleting data with period_date = '{$periodDate}' from main table '{$mainTableName}'");
                     
-                    $columns = array_merge(array_values($columnMapping), ['period_date', 'created_at', 'updated_at']);
+                    $columns = array_merge(
+                        array_values($columnMapping),
+                        $hasPeriodDate ? ['period_date'] : [],
+                        ['created_at', 'updated_at']
+                    );
                     
                     // Remove existing rows for the same period and replace with staging data
-                    DB::table($mainTableName)
-                        ->whereDate('period_date', $periodDate)
-                        ->delete();
+                    if ($hasPeriodDate) {
+                        DB::table($mainTableName)
+                            ->whereDate('period_date', $periodDate)
+                            ->delete();
+                    } else {
+                        // Tidak ada period_date: hapus seluruh tabel (strict = replace all)
+                        DB::table($mainTableName)->delete();
+                    }
 
                     // If table becomes empty, reset identity so IDs start from 1 on next insert
                     $remainingRows = DB::table($mainTableName)->count();
@@ -1537,10 +1651,36 @@ class MappingController extends Controller
                         $this->resetIdentity($mainTableName);
                         Log::info("STRICT MODE: Identity reset because table '{$mainTableName}' kosong setelah delete");
                     }
-                    
+
+                    // Build safe select with TRY_CONVERT for numeric/date columns to avoid type errors on legacy DB
+                    $columnTypes = [];
+                    foreach ($columns as $col) {
+                        try {
+                            $columnTypes[$col] = $schema->getColumnType($mainTableName, $col);
+                        } catch (\Exception $e) {
+                            $columnTypes[$col] = 'string';
+                        }
+                    }
+
+                    $selects = [];
+                    foreach ($columns as $col) {
+                        $type = $columnTypes[$col] ?? 'string';
+                        $expr = "[{$col}]";
+                        if (in_array($type, ['integer', 'bigint', 'smallint', 'tinyint'], true)) {
+                            $expr = "TRY_CONVERT(INT, [{$col}])";
+                        } elseif ($type === 'decimal' || $type === 'float' || $type === 'double') {
+                            $expr = "TRY_CONVERT(DECIMAL(18,2), [{$col}])";
+                        } elseif ($type === 'date') {
+                            $expr = "TRY_CONVERT(DATE, [{$col}])";
+                        } elseif ($type === 'datetime' || $type === 'datetimetz') {
+                            $expr = "TRY_CONVERT(DATETIME, [{$col}])";
+                        }
+                        $selects[] = DB::raw("{$expr} as [{$col}]");
+                    }
+
                     DB::table($mainTableName)->insertUsing(
                         $columns,
-                        DB::table($stagingTableName)->select($columns)
+                        DB::table($stagingTableName)->select($selects)
                     );
                     
                     Log::info("STRICT MODE: Successfully replaced data for period {$periodDate}");
@@ -1549,7 +1689,11 @@ class MappingController extends Controller
                 } else {
                     // UPSERT MODE
                     $dataColumns = array_values($columnMapping);
-                    $allColumns = array_merge($dataColumns, ['period_date', 'created_at', 'updated_at']);
+                    $allColumns = array_merge(
+                        $dataColumns,
+                        $hasPeriodDate ? ['period_date'] : [],
+                        ['created_at', 'updated_at']
+                    );
                     
                     if ($driver === 'sqlsrv') {
                         // SQL Server uses MERGE for upsert
@@ -1620,19 +1764,25 @@ class MappingController extends Controller
             
             // Step 4: Cleanup - Drop staging table
             Log::info("Step 4: Cleanup - Dropping staging table '{$stagingTableName}'");
-            Schema::dropIfExists($stagingTableName);
+            $this->dropStagingTable($stagingTableName, $connection);
             Log::info("Staging table dropped successfully");
             
             // Step 5: Log the upload
-            \App\Models\UploadLog::create([
-                'user_id' => Auth::id(),
-                'division_id' => Auth::user()->division_id,
-                'mapping_index_id' => $mapping->id,
-                'file_name' => $request->file('data_file')->getClientOriginalName(),
-                'rows_imported' => $totalRows,
-                'status' => 'success',
-                'error_message' => null,
-            ]);
+            $previousConnection = DB::getDefaultConnection();
+            DB::setDefaultConnection(config('database.default'));
+            try {
+                \App\Models\UploadLog::create([
+                    'user_id' => Auth::id(),
+                    'division_id' => Auth::user()->division_id,
+                    'mapping_index_id' => $mapping->id,
+                    'file_name' => $request->file('data_file')->getClientOriginalName(),
+                    'rows_imported' => $totalRows,
+                    'status' => 'success',
+                    'error_message' => null,
+                ]);
+            } finally {
+                DB::setDefaultConnection($previousConnection);
+            }
             Log::info("Upload log created successfully");
             
             return response()->json([
@@ -1656,15 +1806,7 @@ class MappingController extends Controller
             Log::error('Line: ' . $e->getLine());
             
             // Cleanup: Drop staging table if it exists
-            if ($stagingTableName && Schema::hasTable($stagingTableName)) {
-                Log::info("Emergency cleanup: Dropping staging table '{$stagingTableName}'");
-                try {
-                    Schema::dropIfExists($stagingTableName);
-                    Log::info("Staging table dropped in error cleanup");
-                } catch (\Exception $cleanupError) {
-                    Log::error("Failed to drop staging table in cleanup: " . $cleanupError->getMessage());
-                }
-            }
+            $this->dropStagingTable($stagingTableName, $connection, true);
 
             if ($csvPath && file_exists($csvPath)) {
                 @unlink($csvPath);

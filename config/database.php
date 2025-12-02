@@ -111,6 +111,17 @@ return [
             // 'encrypt' => env('DB_ENCRYPT', 'yes'),
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
+        
+        'sqlsrv_legacy' => [
+        'driver' => env('LEGACY_DB_CONNECTION', 'sqlsrv'),
+        'host' => env('LEGACY_DB_HOST', env('DB_HOST', 'localhost')),
+        'port' => env('LEGACY_DB_PORT', env('DB_PORT', '1433')),
+        'database' => env('LEGACY_DB_DATABASE', env('DB_DATABASE', 'UploadCenterMain')),
+        'username' => env('LEGACY_DB_USERNAME', env('DB_USERNAME', 'sa')),
+        'password' => env('LEGACY_DB_PASSWORD', env('DB_PASSWORD', '')),
+        'trust_server_certificate' => env('LEGACY_DB_TRUST_SERVER_CERTIFICATE', true),
+        'encrypt' => env('LEGACY_DB_ENCRYPT', 'no'),
+        ],
 
 
     ],

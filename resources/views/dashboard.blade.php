@@ -1,3 +1,4 @@
+@php use Illuminate\Support\Str; @endphp
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
@@ -124,34 +125,6 @@
                 </div>
                 @endif
                 
-                {{-- Chart --}}
-                @if(isset($uploadStats))
-                <div class="lg:col-span-2">
-                    <div class="bg-white overflow-hidden shadow-xl rounded-2xl border border-gray-100 h-full">
-                        <div class="bg-gradient-to-r from-[#0057b7] via-[#006ad6] to-[#00a1e4] px-6 py-4">
-                            <div class="flex items-center">
-                                <div class="flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-xl p-2 shadow-lg">
-                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                                    </svg>
-                                </div>
-                                <div class="ml-3">
-                                    <h3 class="text-base font-bold text-white">
-                                        Tren Upload
-                                    </h3>
-                                    <p class="text-[#d8e7f7] text-xs mt-0.5">
-                                        4 minggu terakhir
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="p-6">
-                            <canvas id="uploadChart" height="80"></canvas>
-                        </div>
-                    </div>
-                </div>
-                @endif
             </div>
             @endif
 
@@ -179,26 +152,16 @@
             <div class="p-6">
                 <form id="uploadForm" method="POST" enctype="multipart/form-data" class="space-y-5">
                     @csrf
-                    <div>
-                        <label for="mapping_id" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                    <div class="relative">
+                        <label for="mapping_search_combo" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
                             <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                             </svg>
                             Format Laporan
                         </label>
-                        <select name="mapping_id" id="mapping_id" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring-1 focus:ring-[#0057b7] transition duration-150 py-2.5 px-3" required>
-                            <option value="">Pilih format laporan...</option>
-                            @forelse($mappings as $mapping)
-                                <option value="{{ $mapping->id }}">
-                                    {{ $mapping->description ?? $mapping->code }}
-                                </option>
-                            @empty
-                                <option value="" disabled>Belum ada format terdaftar</option>
-                            @endforelse
-                            @can('register format')
-                                <option value="__create__">+ Tambah format baru</option>
-                            @endcan
-                        </select>
+                        <input type="hidden" name="mapping_id" id="mapping_id_hidden" required>
+                        <input type="text" id="mapping_search_combo" placeholder="Cari atau pilih format..." class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring-1 focus:ring-[#0057b7] transition duration-150 py-2.5 px-3 text-sm" autocomplete="off">
+                        <div id="mapping_dropdown" class="absolute z-30 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-60 overflow-auto hidden"></div>
                         @if($mappings->isEmpty())
                             <p class="mt-3 text-sm text-amber-700 flex items-center bg-amber-50 p-3 rounded-lg border border-amber-200">
                                 <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -260,77 +223,64 @@
                     </svg>
                 </div>
                 <div class="ml-3">
-                    <h3 class="text-base font-semibold text-white">Format</h3>
-                    <p class="text-sm text-[#d8e7f7]">{{ $mappings->count() }} tersedia</p>
+                    <h3 class="text-base font-semibold text-white">Recent Activity</h3>
+                    <p class="text-sm text-[#d8e7f7]">{{ $recentActivities->count() }} entri terakhir</p>
                 </div>
             </div>
         </div>
     </div>
     
     <div class="p-4 max-h-[600px] overflow-y-auto custom-scrollbar">
-        @forelse ($mappings as $mapping)
+        @forelse ($recentActivities as $activity)
             <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-[#00a1e4] hover:shadow-md transition-all duration-200">
-                <div class="flex items-start justify-between mb-3">
-                    <div class="flex-1">
-                        <h4 class="font-semibold text-gray-900 mb-2">
-                            {{ $mapping->description ?? $mapping->code }}
+                <div class="flex items-start justify-between mb-2">
+                    <div>
+                        <p class="text-xs text-gray-500">{{ $activity->created_at?->format('d M Y H:i') ?? '-' }}</p>
+                        <h4 class="font-semibold text-gray-900">
+                            {{ $activity->mappingIndex->description ?? $activity->mappingIndex->code ?? 'Format' }}
                         </h4>
-                        <div class="space-y-2">
-                            <p class="text-xs text-gray-600 flex items-center">
-                                <svg class="w-3 h-3 mr-1.5 text-[#0057b7]" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>
-                                </svg>
-                                <span class="font-medium">Code:</span> <span class="ml-1 font-mono text-gray-700">{{ $mapping->code }}</span>
-                            </p>
-                            <p class="text-xs text-gray-600 flex items-center">
-                                <svg class="w-3 h-3 mr-1.5 text-[#0057b7]" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"></path>
-                                    <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"></path>
-                                    <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"></path>
-                                </svg>
-                                <span class="font-medium">Tabel:</span> <span class="ml-1 font-mono text-gray-700">{{ $mapping->table_name }}</span>
-                            </p>
-                            <div class="flex flex-wrap gap-1 mt-2">
-                                @foreach($mapping->columns->take(3) as $col)
-                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-[#e8f1fb] text-[#004a99] border border-[#c7d9f3]">
-                                        {{ $col->table_column_name }}
-                                    </span>
-                                @endforeach
-                                @if($mapping->columns->count() > 3)
-                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
-                                        +{{ $mapping->columns->count() - 3 }} lagi
-                                    </span>
-                                @endif
-                            </div>
-                        </div>
+                        <p class="text-sm text-gray-700 mt-1">
+                            {{ $activity->file_name ?? 'Tidak ada nama file' }}
+                        </p>
                     </div>
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold 
+                        {{ ($activity->status ?? '') === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200' }}">
+                        {{ ucfirst($activity->status ?? 'unknown') }}
+                    </span>
                 </div>
-                
-                <div class="mt-3 pt-3 border-t border-gray-200 grid grid-cols-2 gap-2">
-                    <a href="{{ route('mapping.view.data', $mapping->id) }}" 
-                       class="inline-flex items-center justify-center px-3 py-2 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-xs text-white transition-colors duration-200">
-                        <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                <div class="flex flex-wrap gap-2 text-xs text-gray-600">
+                    <span class="inline-flex items-center px-2 py-1 rounded-md bg-[#f4f8fd] border border-[#d8e7f7]">
+                        <svg class="w-3 h-3 mr-1 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                         </svg>
-                        Lihat Data
-                    </a>
-                    <a href="{{ route('export.data', $mapping->id) }}" 
-                       class="inline-flex items-center justify-center px-3 py-2 bg-green-600 hover:bg-green-700 border border-transparent rounded-lg font-medium text-xs text-white transition-colors duration-200">
-                        <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        {{ $activity->rows_imported ?? 0 }} rows
+                    </span>
+                    <span class="inline-flex items-center px-2 py-1 rounded-md bg-[#f4f8fd] border border-[#d8e7f7]">
+                        <svg class="w-3 h-3 mr-1 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0-1.105.895-2 2-2s2 .895 2 2-.895 2-2 2-2-.895-2-2zM6 11c0-1.105.895-2 2-2s2 .895 2 2-.895 2-2 2-2-.895-2-2z"></path>
                         </svg>
-                        Download
-                    </a>
+                        {{ $activity->user->name ?? 'User' }} ({{ $activity->division->name ?? 'Semua divisi' }})
+                    </span>
+                    <span class="inline-flex items-center px-2 py-1 rounded-md bg-[#f4f8fd] border border-[#d8e7f7]">
+                        <svg class="w-3 h-3 mr-1 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h18M4 7h16v10a2 2 0 01-2 2H6a2 2 0 01-2-2V7z"></path>
+                        </svg>
+                        {{ $activity->mappingIndex->table_name ?? '-' }}
+                    </span>
                 </div>
+                @if(!empty($activity->error_message))
+                    <div class="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md p-2">
+                        {{ Str::limit($activity->error_message, 160) }}
+                    </div>
+                @endif
             </div>
         @empty
             <div class="text-center py-12">
                 <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8m-9 13h.01"></path>
                 </svg>
-                <p class="mt-3 text-sm text-gray-500 font-medium">Belum ada format</p>
-                <p class="mt-1 text-xs text-gray-400">Buat format baru untuk memulai</p>
+                <p class="mt-3 text-sm text-gray-500 font-medium">Belum ada aktivitas unggah</p>
+                <p class="mt-1 text-xs text-gray-400">Aktivitas terbaru akan tampil di sini.</p>
             </div>
         @endforelse
     </div>
@@ -394,86 +344,6 @@
     </div>
 
     @push('scripts')
-    {{-- Chart.js untuk SuperUser --}}
-    @if(auth()->user()->division->is_super_user && isset($uploadStats))
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script>
-        const ctx = document.getElementById('uploadChart');
-        const uploadData = @json($uploadStats);
-        
-        const colors = [
-            'rgb(0, 87, 183)',    // Panasonic blue
-            'rgb(0, 161, 228)',   // Panasonic light blue
-            'rgb(0, 74, 153)',    // Deep blue
-            'rgb(74, 138, 201)',  // Medium blue
-            'rgb(16, 149, 131)',  // Teal accent
-            'rgb(93, 120, 155)',  // Muted slate
-        ];
-
-        const datasets = uploadData.datasets.map((dataset, index) => ({
-            label: dataset.label,
-            data: dataset.data,
-            borderColor: colors[index % colors.length],
-            backgroundColor: colors[index % colors.length] + '20',
-            borderWidth: 3,
-            tension: 0.4,
-            fill: true
-        }));
-
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: uploadData.labels,
-                datasets: datasets
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            padding: 15,
-                            font: {
-                                size: 12,
-                                weight: 'bold'
-                            }
-                        }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        padding: 12,
-                        titleFont: {
-                            size: 14,
-                            weight: 'bold'
-                        },
-                        bodyFont: {
-                            size: 13
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            precision: 0
-                        },
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)'
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                }
-            }
-        });
-    </script>
-    @endif
     <script>
         let previewData = null;
         let currentSheetName = null;
@@ -483,7 +353,10 @@
             const fileName = document.getElementById('file-name');
             const dropZone = document.getElementById('drop-zone');
             const previewContent = document.getElementById('previewContent');
-            const mappingSelect = document.getElementById('mapping_id');
+            const mappingCombo = document.getElementById('mapping_search_combo');
+            const mappingHidden = document.getElementById('mapping_id_hidden');
+            const mappingDropdown = document.getElementById('mapping_dropdown');
+            const mappingData = @json($mappings->map(function($m){ return ['id'=>$m->id, 'label'=>$m->description ?? $m->code]; }));
             const createFormatUrl = '{{ route("mapping.register.form") }}';
             
             // Handle file input change
@@ -503,14 +376,53 @@
                 currentSheetName = null;
             });
 
-            // Quick link to create new format from dropdown
-            if (mappingSelect) {
-                mappingSelect.addEventListener('change', function() {
-                    if (this.value === '__create__') {
-                        window.location.href = createFormatUrl;
-                        this.value = '';
-                    }
+            // Combobox behavior for mapping search + select
+            if (mappingCombo && mappingHidden && mappingDropdown) {
+                const renderDropdown = (term = '') => {
+                    const items = [];
+                    const q = term.toLowerCase();
+                    mappingData.forEach(item => {
+                        if (q === '' || item.label.toLowerCase().includes(q)) {
+                            items.push(`<button type="button" data-id="${item.id}" class="mapping-option w-full text-left px-3 py-2 hover:bg-[#f4f8fd]">${item.label}</button>`);
+                        }
+                    });
+                    @can('register format')
+                        items.push('<button type="button" data-id="__create__" class="mapping-option w-full text-left px-3 py-2 hover:bg-[#f4f8fd] text-[#0057b7] font-semibold">+ Tambah format baru</button>');
+                    @endcan
+                    mappingDropdown.innerHTML = items.join('') || '<div class="px-3 py-2 text-sm text-gray-500">Tidak ada hasil</div>';
+                };
+
+                const showDropdown = () => {
+                    mappingDropdown.classList.remove('hidden');
+                };
+                const hideDropdown = () => {
+                    setTimeout(() => mappingDropdown.classList.add('hidden'), 150);
+                };
+
+                mappingCombo.addEventListener('focus', () => {
+                    renderDropdown(mappingCombo.value);
+                    showDropdown();
                 });
+
+                mappingCombo.addEventListener('input', () => {
+                    renderDropdown(mappingCombo.value);
+                    showDropdown();
+                });
+
+                mappingDropdown.addEventListener('mousedown', (e) => {
+                    const btn = e.target.closest('.mapping-option');
+                    if (!btn) return;
+                    const id = btn.dataset.id;
+                    const label = btn.textContent.trim();
+                    if (id === '__create__') {
+                        window.location.href = createFormatUrl;
+                        return;
+                    }
+                    mappingHidden.value = id;
+                    mappingCombo.value = label;
+                });
+
+                mappingCombo.addEventListener('blur', hideDropdown);
             }
 
             // Drag and Drop functionality
@@ -609,7 +521,7 @@
             });
 
             function loadPreview(selectedSheet = null) {
-                const mappingId = document.getElementById('mapping_id').value;
+                const mappingId = document.getElementById('mapping_id_hidden').value;
                 
                 if (!mappingId) {
                     alert('Pilih format terlebih dahulu');

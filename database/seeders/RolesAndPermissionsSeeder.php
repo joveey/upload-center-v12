@@ -28,6 +28,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'guard_name' => $guard,
         ]);
 
+        $legacyView = Permission::firstOrCreate([
+            'name' => 'legacy.format.view',
+            'guard_name' => $guard,
+        ]);
+
         $divisionUserRole = Role::firstOrCreate([
             'name' => 'division-user',
             'guard_name' => $guard,

@@ -10,6 +10,8 @@ class UploadLog extends Model
 {
     use HasFactory;
 
+    protected $connection = 'sqlsrv'; // ensure logs always go to default/main DB
+
     protected $fillable = [
         'user_id',
         'division_id',

@@ -2,6 +2,7 @@
 // routes/web.php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\LegacyFormatController;
 use App\Http\Controllers\MappingController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
@@ -60,6 +61,12 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/formats', [MappingController::class, 'index'])
         ->name('formats.index');
+
+    Route::get('/legacy-format', [LegacyFormatController::class, 'list'])
+        ->name('legacy.format.list');
+
+    Route::get('/legacy-format/{mapping}', [LegacyFormatController::class, 'index'])
+        ->name('legacy.format.index');
 });
 
 require __DIR__.'/auth.php';

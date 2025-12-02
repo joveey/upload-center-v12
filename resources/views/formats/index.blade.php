@@ -32,6 +32,24 @@
     <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             
+            @if (session('error'))
+                <div class="mb-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 flex items-start space-x-3">
+                    <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="text-sm font-medium">{{ session('error') }}</div>
+                </div>
+            @endif
+
+            @if (session('success'))
+                <div class="mb-4 rounded-xl border border-green-200 bg-green-50 text-green-700 px-4 py-3 flex items-start space-x-3">
+                    <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <div class="text-sm font-medium">{{ session('success') }}</div>
+                </div>
+            @endif
+
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                 <div class="bg-white overflow-hidden shadow-lg rounded-2xl border border-gray-100">
                     <div class="p-6">
@@ -113,6 +131,9 @@
                                     {{-- Diubah: Warna teks subjudul --}}
                                     <p class="text-sm text-[#d8e7f7] mt-1">
                                         {{ $mapping->columns->count() }} kolom • {{ number_format($mapping->row_count) }} baris
+                                    </p>
+                                    <p class="text-xs text-[#d8e7f7] mt-1">
+                                        Dibuat oleh: {{ optional($mapping->division)->name ?? 'Legacy' }}
                                     </p>
                                 </div>
                                 <div class="flex-shrink-0 ml-3">
