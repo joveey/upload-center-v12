@@ -1,24 +1,18 @@
-<nav x-data="{ open: false }" class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40">
+<nav x-data="{ open: false }" class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40 py-4">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between h-16">
-            <div class="flex">
+        <div class="flex justify-between h-20 items-center">
+            <div class="flex items-center space-x-8">
                 <!-- Logo -->
                 <div class="shrink-0 flex items-center">
-                    <a href="{{ auth()->check() ? route('dashboard') : '/' }}" class="flex items-center space-x-3 group">
-                        <div class="bg-[#0057b7] p-2 rounded-lg shadow-md group-hover:shadow-lg transition-shadow duration-200">
-                            <svg class="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                            </svg>
-                        </div>
-                        <span class="text-xl font-bold text-[#004a99]">
-                            Upload Center
-                        </span>
+                    <a href="{{ auth()->check() ? route('dashboard') : '/' }}" class="flex flex-col items-center justify-center leading-tight text-center">
+                        <img src="/images/panasonic-logo.svg" alt="Panasonic" class="h-8">
+                        <span class="text-[11px] font-semibold text-[#0c4fb2] mt-0.5 tracking-tight">Upload Center</span>
                     </a>
                 </div>
 
                 @auth
                 <!-- Navigation Links (Authenticated) -->
-                <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
+                <div class="hidden space-x-6 sm:-my-px sm:flex">
                     <a href="{{ route('dashboard') }}" class="inline-flex items-center px-1 pt-1 border-b-2 {{ request()->routeIs('dashboard') ? 'border-[#0057b7] text-[#0f172a]' : 'border-transparent text-gray-500 hover:text-[#0f172a] hover:border-[#c7d9f3]' }} text-sm font-medium leading-5 focus:outline-none focus:border-[#004a99] transition duration-150 ease-in-out">
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
