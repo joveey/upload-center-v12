@@ -6,12 +6,29 @@
                 <p class="mt-1 text-sm text-gray-600">
                     Pilih mapping legacy untuk melihat data dari koneksi/tabel terkait.
                 </p>
+                @if(!empty($search ?? ''))
+                    <p class="mt-1 text-xs text-[#0057b7] font-semibold">Filter: "{{ $search }}"</p>
+                @endif
             </div>
-            <div class="flex items-center space-x-2 bg-[#e8f1fb] text-[#0057b7] px-3 py-2 rounded-lg border border-[#c7d9f3]">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4m0-8c2.21 0 4 1.79 4 4s-1.79 4-4 4m0-8V4m0 12v4m4-8h4m-8 0H4"/>
-                </svg>
-                <span class="text-sm font-semibold">Visible to all authenticated users</span>
+            <div class="flex items-center space-x-3">
+                <form method="GET" action="{{ route('legacy.format.list') }}" class="relative">
+                    <input
+                        type="text"
+                        name="q"
+                        value="{{ $search ?? '' }}"
+                        placeholder="Cari kode, deskripsi, tabel..."
+                        class="pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0057b7]/40 focus:border-[#0057b7] bg-white shadow-sm w-64 md:w-72"
+                    />
+                    <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
+                    </svg>
+                </form>
+                <div class="flex items-center space-x-2 bg-[#e8f1fb] text-[#0057b7] px-3 py-2 rounded-lg border border-[#c7d9f3]">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4m0-8c2.21 0 4 1.79 4 4s-1.79 4-4 4m0-8V4m0 12v4m4-8h4m-8 0H4"/>
+                    </svg>
+                    <span class="text-sm font-semibold">Visible to all authenticated users</span>
+                </div>
             </div>
         </div>
     </x-slot>
@@ -71,6 +88,12 @@
                             </tbody>
                         </table>
                     </div>
+
+                    @if($mappings instanceof \Illuminate\Pagination\LengthAwarePaginator)
+                        <div class="mt-6">
+                            {{ $mappings->links() }}
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>

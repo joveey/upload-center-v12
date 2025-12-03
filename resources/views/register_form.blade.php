@@ -20,12 +20,8 @@
             <div class="bg-white overflow-hidden shadow-lg sm:rounded-lg border border-gray-200">
                 <!-- Header Card -->
                 <div class="bg-[#0057b7] px-8 py-6 border-b border-[#004a99]">
-                    <div class="flex items-center space-x-3">
-                        <div class="flex-shrink-0 bg-[#004a99] rounded-lg p-2">
-                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                            </svg>
-                        </div>
+                    <div class="flex items-center space-x-4">
+                        <img src="{{ asset('images/panasonic-logo.svg') }}" alt="Panasonic" class="h-8 w-auto">
                         <div>
                             <h3 class="text-xl font-bold text-white">Konfigurasi Format Baru</h3>
                             <p class="text-[#d8e7f7] text-sm">Lengkapi informasi berikut untuk membuat format import</p>

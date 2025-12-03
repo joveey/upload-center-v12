@@ -6,6 +6,7 @@ use App\Models\MappingIndex;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class LegacyFormatController extends Controller
 {
@@ -21,35 +22,58 @@ class LegacyFormatController extends Controller
         $legacyDbName = config("database.connections.{$legacyConnection}.database");
         $sameDatabase = $defaultDbName === $legacyDbName;
 
-        $mappings = MappingIndex::with('division')
-            ->orderBy('description')
-            ->get()
-            ->filter(function ($mapping) use ($legacyConnection, $defaultConnection, $sameDatabase) {
-                if (! $mapping->table_name) {
-                    return false;
-                }
+        $search = trim((string) $request->input('q', ''));
+        $query = MappingIndex::with('division')->orderBy('description');
 
-                $existsOnLegacy = Schema::connection($legacyConnection)->hasTable($mapping->table_name);
-                $existsOnDefault = Schema::connection($defaultConnection)->hasTable($mapping->table_name);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $like = '%' . $search . '%';
+                $q->where('description', 'like', $like)
+                    ->orWhere('code', 'like', $like)
+                    ->orWhere('table_name', 'like', $like);
+            });
+        }
 
-                if (! $existsOnLegacy) {
-                    return false;
-                }
+        $collection = $query->get()->filter(function ($mapping) use ($legacyConnection, $defaultConnection, $sameDatabase) {
+            if (! $mapping->table_name) {
+                return false;
+            }
 
-                // Jika DB berbeda, hanya tampilkan tabel yang tidak ada di default (hindari yang milik DB utama).
-                if (! $sameDatabase && $existsOnDefault) {
-                    return false;
-                }
+            $existsOnLegacy = Schema::connection($legacyConnection)->hasTable($mapping->table_name);
+            $existsOnDefault = Schema::connection($defaultConnection)->hasTable($mapping->table_name);
 
-                return true;
-            })
-            ->values();
+            if (! $existsOnLegacy) {
+                return false;
+            }
+
+            // Jika DB berbeda, hanya tampilkan tabel yang tidak ada di default (hindari yang milik DB utama).
+            if (! $sameDatabase && $existsOnDefault) {
+                return false;
+            }
+
+            return true;
+        })->values();
+
+        $perPage = 10;
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $items = $collection->slice(($page - 1) * $perPage, $perPage)->values();
+        $mappings = new LengthAwarePaginator(
+            $items,
+            $collection->count(),
+            $perPage,
+            $page,
+            [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]
+        );
 
         return view('legacy.format.list', [
             'mappings' => $mappings,
             'legacyDbName' => $legacyDbName,
             'defaultDbName' => $defaultDbName,
             'sameDatabase' => $sameDatabase,
+            'search' => $search,
         ]);
     }
 

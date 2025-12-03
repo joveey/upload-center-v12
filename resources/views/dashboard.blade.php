@@ -14,9 +14,9 @@
             </h2>
             <p class="mt-1 text-sm text-gray-600">
                 @if(auth()->user()->division->is_super_user)
-                    Admin Panel - Kelola semua data
+                    Akses admin: pantau seluruh format dan data
                 @else
-                    Kelola dan unggah data Excel dengan mudah
+                    Pilih format lalu unggah file Excel divisi Anda
                 @endif
             </p>
         </div>  

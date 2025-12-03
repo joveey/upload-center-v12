@@ -88,7 +88,7 @@
                             </div>
                             <div class="ml-4 flex-1">
                                 <p class="text-sm font-medium text-gray-600">Total Format</p>
-                                <p class="text-3xl font-bold text-gray-900">{{ $totalFormats }}</p>
+                                <p class="text-3xl font-bold text-gray-900">{{ number_format($totalFormats) }}</p>
                             </div>
                         </div>
                     </div>
@@ -104,7 +104,7 @@
                             </div>
                             <div class="ml-4 flex-1">
                                 <p class="text-sm font-medium text-gray-600">Total Kolom</p>
-                                <p class="text-3xl font-bold text-gray-900">{{ $mappings->sum(function($m) { return $m->columns->count(); }) }}</p>
+                                <p class="text-3xl font-bold text-gray-900">{{ number_format($totalColumns ?? 0) }}</p>
                             </div>
                         </div>
                     </div>
@@ -120,7 +120,7 @@
                             </div>
                             <div class="ml-4 flex-1">
                                 <p class="text-sm font-medium text-gray-600">Total Baris Data</p>
-                                <p class="text-3xl font-bold text-gray-900">{{ number_format($mappings->sum('row_count')) }}</p>
+                                <p class="text-3xl font-bold text-gray-900">{{ number_format($totalRows ?? 0) }}</p>
                             </div>
                         </div>
                     </div>
@@ -136,7 +136,7 @@
                             </div>
                             <div class="ml-4 flex-1">
                                 <p class="text-sm font-medium text-gray-600">Rata-rata Kolom</p>
-                                <p class="text-3xl font-bold text-gray-900">{{ $totalFormats > 0 ? round($mappings->sum(function($m) { return $m->columns->count(); }) / $totalFormats, 1) : 0 }}</p>
+                                <p class="text-3xl font-bold text-gray-900">{{ $avgColumns ?? 0 }}</p>
                             </div>
                         </div>
                     </div>
@@ -322,6 +322,12 @@
                     </div>
                 @endforelse
             </div>
+
+            @if($mappings instanceof \Illuminate\Pagination\LengthAwarePaginator)
+                <div class="mt-8">
+                    {{ $mappings->links() }}
+                </div>
+            @endif
         </div>
     </div>
 </x-app-layout>

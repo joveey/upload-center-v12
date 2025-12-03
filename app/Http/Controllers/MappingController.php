@@ -180,10 +180,12 @@ class MappingController extends Controller
             });
         }
 
-        $mappings = $query->orderBy('description')->get();
+        $perPage = 10;
+
+        $mappings = $query->orderBy('description')->paginate($perPage)->withQueryString();
         
         // Get statistics for each mapping
-        $mappings->each(function ($mapping) use ($user) {
+        $mappings->getCollection()->each(function ($mapping) use ($user) {
             $tableName = $mapping->table_name;
             $connection = $mapping->target_connection
                 ?? $mapping->connection
@@ -203,9 +205,20 @@ class MappingController extends Controller
             }
         });
         
+        $totalFormats = $mappings->total();
+        $totalColumns = \App\Models\MappingColumn::whereIn(
+            'mapping_index_id',
+            (clone $query)->select('id')
+        )->count();
+        $totalRowsCurrentPage = $mappings->getCollection()->sum('row_count');
+        $avgColumns = $totalFormats > 0 ? round($totalColumns / $totalFormats, 1) : 0;
+
         return view('formats.index', [
             'mappings' => $mappings,
-            'totalFormats' => $mappings->count(),
+            'totalFormats' => $totalFormats,
+            'totalColumns' => $totalColumns,
+            'totalRows' => $totalRowsCurrentPage,
+            'avgColumns' => $avgColumns,
             'search' => $search,
         ]);
     }

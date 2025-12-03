@@ -1,14 +1,11 @@
 <x-guest-layout>
     <div class="mb-8 text-center">
-        <div class="inline-flex items-center justify-center w-20 h-20 mb-6 bg-gradient-to-br from-[#0057b7] via-[#006ad6] to-[#00a1e4] rounded-3xl shadow-2xl transform hover:scale-105 transition-transform duration-300">
-            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
-            </svg>
+        <div class="flex justify-center mb-4">
+            <img src="{{ asset('images/panasonic-logo.svg') }}" alt="Panasonic" class="h-12 md:h-14 w-auto drop-shadow-sm">
         </div>
         <h2 class="text-4xl font-extrabold bg-gradient-to-r from-[#004a99] via-[#0057b7] to-[#00a1e4] bg-clip-text text-transparent mb-2">
             Buat Akun Baru
         </h2>
-        <p class="text-base text-gray-600 font-medium">Bergabunglah dan kelola data dengan mudah</p>
     </div>
 
     <form method="POST" action="{{ route('register') }}" class="space-y-6">
