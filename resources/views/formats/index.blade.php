@@ -16,16 +16,30 @@
                     </p>
                 </div>
             </div>
-            @can('register format')
-                <a href="{{ route('mapping.register.form') }}">
-                    <button class="inline-flex items-center px-5 py-2.5 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                        </svg>
-                        Buat Format Baru
-                    </button>
-                </a>
-            @endcan
+            <div class="flex items-center space-x-3">
+                <form method="GET" action="{{ route('formats.index') }}" class="relative">
+                    <input
+                        type="text"
+                        name="q"
+                        value="{{ $search ?? '' }}"
+                        placeholder="Cari format, kode, atau tabel..."
+                        class="pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0057b7]/40 focus:border-[#0057b7] bg-white shadow-sm w-64 md:w-72"
+                    />
+                    <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
+                    </svg>
+                </form>
+                @can('register format')
+                    <a href="{{ route('mapping.register.form') }}">
+                        <button class="inline-flex items-center px-5 py-2.5 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            Buat Format Baru
+                        </button>
+                    </a>
+                @endcan
+            </div>
         </div>
     </x-slot>
 
@@ -47,6 +61,18 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                     </svg>
                     <div class="text-sm font-medium">{{ session('success') }}</div>
+                </div>
+            @endif
+
+            @if (!empty($search ?? ''))
+                <div class="mb-4 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 px-4 py-3 flex items-start space-x-3">
+                    <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/>
+                    </svg>
+                    <div class="text-sm">
+                        <span class="font-semibold">Filter:</span> "{{ $search }}"
+                        <a href="{{ route('formats.index') }}" class="ml-2 text-[#0057b7] font-semibold hover:underline">Reset</a>
+                    </div>
                 </div>
             @endif
 
@@ -133,7 +159,7 @@
                                         {{ $mapping->columns->count() }} kolom • {{ number_format($mapping->row_count) }} baris
                                     </p>
                                     <p class="text-xs text-[#d8e7f7] mt-1">
-                                        Dibuat oleh: {{ optional($mapping->division)->name ?? 'Legacy' }}
+                                        Dibuat oleh: {{ $mapping->is_legacy_source ? 'Legacy' : (optional($mapping->division)->name ?? 'Legacy') }}
                                     </p>
                                 </div>
                                 <div class="flex-shrink-0 ml-3">

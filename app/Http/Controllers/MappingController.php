@@ -164,22 +164,40 @@ class MappingController extends Controller
     /**
      * Display all formats/mappings
      */
-    public function index(): View
+    public function index(Request $request): View
     {
         $user = Auth::user();
         
         $query = MappingIndex::with('columns', 'division');
+        $search = trim((string) $request->input('q', ''));
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $like = '%' . $search . '%';
+                $q->where('description', 'like', $like)
+                    ->orWhere('code', 'like', $like)
+                    ->orWhere('table_name', 'like', $like);
+            });
+        }
 
         $mappings = $query->orderBy('description')->get();
         
         // Get statistics for each mapping
         $mappings->each(function ($mapping) use ($user) {
             $tableName = $mapping->table_name;
-            
-            if (Schema::hasTable($tableName)) {
-                $query = DB::table($tableName);
+            $connection = $mapping->target_connection
+                ?? $mapping->connection
+                ?? config('database.default');
 
-                $mapping->row_count = $query->count();
+            // Jika tabel tidak ada di koneksi utama mapping tapi ada di legacy, gunakan legacy
+            if (!Schema::connection($connection)->hasTable($tableName) && Schema::connection('sqlsrv_legacy')->hasTable($tableName)) {
+                $connection = 'sqlsrv_legacy';
+            }
+
+            $mapping->is_legacy_source = ($connection === 'sqlsrv_legacy');
+            
+            if (Schema::connection($connection)->hasTable($tableName)) {
+                $mapping->row_count = DB::connection($connection)->table($tableName)->count();
             } else {
                 $mapping->row_count = 0;
             }
@@ -188,6 +206,7 @@ class MappingController extends Controller
         return view('formats.index', [
             'mappings' => $mappings,
             'totalFormats' => $mappings->count(),
+            'search' => $search,
         ]);
     }
 
@@ -199,14 +218,20 @@ class MappingController extends Controller
         $user = Auth::user();
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
 
-        // Check permission
-        if (!$this->userHasRole($user, 'super-admin') && $mapping->division_id !== $user->division_id) {
-            return redirect()
-                ->route('formats.index')
-                ->with('error', 'Akses ditolak: Anda tidak memiliki akses untuk melihat data format ini.');
+        // Pilih koneksi DB sesuai mapping (fallback ke default/legacy)
+        $connection = $mapping->target_connection
+            ?? $mapping->connection
+            ?? config('database.default');
+        $tableName = $mapping->table_name;
+
+        // Jika tabel tidak ada di koneksi terpilih tapi ada di legacy, pakai legacy
+        if (!Schema::connection($connection)->hasTable($tableName) && Schema::connection('sqlsrv_legacy')->hasTable($tableName)) {
+            $connection = 'sqlsrv_legacy';
         }
 
-        $tableName = $mapping->table_name;
+        if (!Schema::connection($connection)->hasTable($tableName)) {
+            return back()->with('error', "Tabel '{$tableName}' tidak ditemukan di koneksi {$connection}.");
+        }
         
         // Get column mapping sorted by Excel column order
         $columnMapping = $mapping->columns
@@ -219,15 +244,20 @@ class MappingController extends Controller
         }
 
         // Get actual table columns
-        $actualTableColumns = DB::getSchemaBuilder()->getColumnListing($tableName);
+        $actualTableColumns = Schema::connection($connection)->getColumnListing($tableName);
         $validColumns = array_intersect(array_values($columnMapping), $actualTableColumns);
 
         if (empty($validColumns)) {
             return back()->with('error', 'Konfigurasi mapping tidak sesuai dengan skema tabel.');
         }
 
+        // Pastikan hanya memilih kolom yang benar-benar ada
+        $selectColumns = array_values(array_unique(array_filter(array_merge(['id'], $validColumns, ['created_at', 'updated_at']), function ($col) use ($actualTableColumns) {
+            return in_array($col, $actualTableColumns, true);
+        })));
+
         // Build query
-        $query = DB::table($tableName)->select(array_merge(['id'], $validColumns, ['created_at', 'updated_at']));
+        $query = DB::connection($connection)->table($tableName)->select($selectColumns);
         
         // Filter by division if not super-admin
         if (!$this->userHasRole($user, 'super-admin')) {

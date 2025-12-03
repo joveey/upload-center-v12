@@ -6,6 +6,7 @@ use App\Models\MappingIndex;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Style;
 use OpenSpout\Writer\XLSX\Writer;
@@ -24,6 +25,14 @@ class ExportController extends Controller
         // Export dibuka untuk semua user yang login; pembatasan hanya untuk aksi hapus.
 
         $tableName = $mapping->table_name;
+        $connection = $mapping->target_connection
+            ?? $mapping->connection
+            ?? config('database.default');
+
+        // Jika tabel tidak ada di koneksi terpilih tapi ada di legacy, gunakan legacy
+        if (!Schema::connection($connection)->hasTable($tableName) && Schema::connection('sqlsrv_legacy')->hasTable($tableName)) {
+            $connection = 'sqlsrv_legacy';
+        }
         
         // Get column mapping: excel_column => table_column_name
         $columnMapping = $mapping->columns
@@ -35,7 +44,7 @@ class ExportController extends Controller
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
         }
 
-        $actualTableColumns = DB::getSchemaBuilder()->getColumnListing($tableName);
+        $actualTableColumns = Schema::connection($connection)->getColumnListing($tableName);
         $validColumns = array_intersect(array_values($columnMapping), $actualTableColumns);
 
         if (empty($validColumns)) {
@@ -54,7 +63,7 @@ class ExportController extends Controller
             $selectColumns[] = 'updated_at';
         }
 
-        $query = DB::table($tableName)->select($selectColumns);
+        $query = DB::connection($connection)->table($tableName)->select($selectColumns);
         
         if (!$this->userHasRole($user, 'super-admin')) {
             if (in_array('division_id', $actualTableColumns)) {
