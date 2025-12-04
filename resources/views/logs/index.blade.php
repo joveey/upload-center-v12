@@ -61,8 +61,7 @@
                             </svg>
                         </div>
                         <div>
-                            <p class="text-sm text-[#d8e7f7]">Log aktivitas</p>
-                            <h3 class="text-xl font-semibold">Riwayat Upload & Pembuatan Format</h3>
+                            <h3 class="text-xl font-semibold">Log Aktivitas</h3>
                         </div>
                     </div>
                     <div class="text-sm text-[#d8e7f7]">
@@ -96,7 +95,13 @@
                                     </td>
                                     <td class="px-4 py-3 text-sm font-semibold text-gray-900">
                                         @php
-                                            $actionLabel = $log->action === 'create_format' ? 'Buat Format' : 'Upload Data';
+                                            $actionMap = [
+                                                'upload' => 'Upload Data',
+                                                'create_format' => 'Buat Format',
+                                                'clear_data' => 'Hapus Isi',
+                                                'delete_format' => 'Hapus Format',
+                                            ];
+                                            $actionLabel = $actionMap[$log->action ?? ''] ?? ucfirst($log->action ?? 'Upload Data');
                                         @endphp
                                         {{ $actionLabel }}
                                     </td>

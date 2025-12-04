@@ -1048,11 +1048,46 @@ class MappingController extends Controller
 
             Log::warning("Tabel {$tableName} dikosongkan & ID di-reset ({$rowCount} baris dihapus) oleh user {$user->id}");
 
+            // Log success
+            try {
+                \App\Models\UploadLog::create([
+                    'user_id' => $user->id,
+                    'division_id' => $user->division_id,
+                    'mapping_index_id' => $mapping->id,
+                    'file_name' => $tableName,
+                    'rows_imported' => 0,
+                    'status' => 'success',
+                    'action' => 'clear_data',
+                    'upload_mode' => null,
+                    'error_message' => null,
+                ]);
+            } catch (\Throwable $logEx) {
+                Log::warning('Gagal mencatat log clear_data: ' . $logEx->getMessage());
+            }
+
             return redirect()
                 ->route('formats.index')
                 ->with('success', "Isi tabel '{$tableName}' berhasil dihapus dan ID di-reset (total {$rowCount} baris).");
         } catch (\Exception $e) {
             Log::error("Gagal mengosongkan tabel {$tableName}: " . $e->getMessage());
+
+            // Log failure
+            try {
+                \App\Models\UploadLog::create([
+                    'user_id' => $user->id,
+                    'division_id' => $user->division_id,
+                    'mapping_index_id' => $mapping->id,
+                    'file_name' => $tableName,
+                    'rows_imported' => 0,
+                    'status' => 'failed',
+                    'action' => 'clear_data',
+                    'upload_mode' => null,
+                    'error_message' => $e->getMessage(),
+                ]);
+            } catch (\Throwable $logEx) {
+                Log::warning('Gagal mencatat log clear_data gagal: ' . $logEx->getMessage());
+            }
+
             return redirect()
                 ->route('formats.index')
                 ->with('error', 'Gagal menghapus isi tabel: ' . $e->getMessage());
@@ -1091,12 +1126,46 @@ class MappingController extends Controller
             DB::commit();
             Log::info("Format {$mapping->id} berhasil dihapus.");
 
+            // Log success delete format
+            try {
+                \App\Models\UploadLog::create([
+                    'user_id' => $user->id,
+                    'division_id' => $user->division_id,
+                    'mapping_index_id' => $mapping->id,
+                    'file_name' => $tableName,
+                    'rows_imported' => 0,
+                    'status' => 'success',
+                    'action' => 'delete_format',
+                    'upload_mode' => null,
+                    'error_message' => null,
+                ]);
+            } catch (\Throwable $logEx) {
+                Log::warning('Gagal mencatat log delete_format: ' . $logEx->getMessage());
+            }
+
             return redirect()
                 ->route('formats.index')
                 ->with('success', "Format '{$mapping->description}' dan tabel '{$tableName}' berhasil dihapus.");
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Gagal menghapus format: ' . $e->getMessage());
+
+            // Log failure delete format
+            try {
+                \App\Models\UploadLog::create([
+                    'user_id' => $user->id,
+                    'division_id' => $user->division_id,
+                    'mapping_index_id' => $mapping->id,
+                    'file_name' => $tableName,
+                    'rows_imported' => 0,
+                    'status' => 'failed',
+                    'action' => 'delete_format',
+                    'upload_mode' => null,
+                    'error_message' => $e->getMessage(),
+                ]);
+            } catch (\Throwable $logEx) {
+                Log::warning('Gagal mencatat log delete_format gagal: ' . $logEx->getMessage());
+            }
 
             return redirect()
                 ->route('formats.index')

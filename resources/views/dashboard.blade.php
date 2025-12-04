@@ -75,59 +75,6 @@
                 @endif
             </div>
 
-            {{-- SuperUser Statistics --}}
-            @if(auth()->user()->division->is_super_user)
-            <div class="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {{-- Upload Count per Division --}}
-                @if(isset($divisionUploadCounts) && count($divisionUploadCounts) > 0)
-                <div class="lg:col-span-1">
-                    <div class="bg-white overflow-hidden shadow-xl rounded-2xl border border-gray-100 h-full">
-                        <div class="bg-gradient-to-r from-[#0057b7] to-[#00a1e4] px-6 py-4">
-                            <div class="flex items-center">
-                                <div class="flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-xl p-2 shadow-lg">
-                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
-                                    </svg>
-                                </div>
-                                <div class="ml-3">
-                                    <h3 class="text-base font-bold text-white">
-                                        Total Upload
-                                    </h3>
-                                    <p class="text-[#d8e7f7] text-xs mt-0.5">
-                                        Per Divisi
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="p-6">
-                            <div class="space-y-3">
-                                @foreach($divisionUploadCounts as $divCount)
-                                <div class="flex items-center justify-between p-3 bg-gradient-to-r from-[#e8f1fb] to-[#d8e7f7] rounded-lg border border-[#c7d9f3] hover:shadow-md transition-shadow duration-200">
-                                    <div class="flex items-center space-x-3">
-                                        <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-[#0057b7] to-[#00a1e4] rounded-lg flex items-center justify-center shadow-sm">
-                                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-                                            </svg>
-                                        </div>
-                                        <span class="font-semibold text-gray-800">{{ $divCount['name'] }}</span>
-                                    </div>
-                                    <div class="flex items-center space-x-2">
-                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-gradient-to-r from-[#0057b7] to-[#00a1e4] text-white shadow-sm">
-                                            {{ $divCount['count'] }}
-                                        </span>
-                                    </div>
-                                </div>
-                                @endforeach
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                @endif
-                
-            </div>
-            @endif
-
             {{-- Admin stats and alerts --}}
             @if(auth()->user()->division->is_super_user)
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
@@ -191,47 +138,48 @@
                         </div>
                     </div>
 
-                    <div class="bg-white shadow-lg rounded-2xl border border-gray-200 p-5">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 rounded-xl bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                    </svg>
-                                </div>
-                                <div>
-                                    <p class="text-sm text-gray-600">Kesehatan Sistem</p>
-                                    <p class="text-xs text-gray-500">Cek koneksi & log</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex items-center justify-between p-3 rounded-lg border {{ ($stats['health']['default_db'] ?? false) ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700' }}">
-                                <span>DB Default</span>
-                                <span class="font-semibold">{{ ($stats['health']['default_db'] ?? false) ? 'OK' : 'Down' }}</span>
-                            </div>
-                            <div class="flex items-center justify-between p-3 rounded-lg border {{ ($stats['health']['legacy_db'] ?? false) ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700' }}">
-                                <span>DB Legacy</span>
-                                <span class="font-semibold">{{ ($stats['health']['legacy_db'] ?? false) ? 'OK' : 'Down' }}</span>
-                            </div>
-                            <div class="flex items-center justify-between p-3 rounded-lg border {{ ($stats['health']['logs'] ?? false) ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700' }}">
-                                <span>Tabel Log</span>
-                                <span class="font-semibold">{{ ($stats['health']['logs'] ?? false) ? 'OK' : 'Down' }}</span>
-                            </div>
-                        </div>
-                        <div class="mt-4">
-                            <p class="text-xs text-gray-500">Upload gagal (5 terakhir):</p>
-                            <div class="space-y-2 mt-2">
-                                @forelse($stats['failed_uploads'] ?? [] as $fail)
-                                    <div class="p-2 rounded-lg border border-red-200 bg-red-50 text-xs text-red-700">
-                                        {{ optional($fail->created_at)->format('d M H:i') }} —
-                                        {{ $fail->mappingIndex->description ?? $fail->mappingIndex->code ?? 'Format' }} —
-                                        {{ $fail->file_name ?? '-' }}
+                </div>
+            @endif
+
+            @if(auth()->user()->division->is_super_user)
+                <div class="mb-6">
+                    <div class="bg-white shadow-lg rounded-2xl border border-gray-200 overflow-hidden">
+                        <div class="bg-gradient-to-r from-[#0057b7] to-[#0072ce] px-6 py-4 border-b border-[#004a99]">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-3">
+                                    <div class="w-10 h-10 rounded-xl bg-[#004a99] flex items-center justify-center text-white">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21h18M5 10h14l-1.5-6h-11L5 10zm2 11V10m10 11V10" />
+                                        </svg>
                                     </div>
-                                @empty
-                                    <p class="text-xs text-gray-500">Tidak ada kegagalan terbaru.</p>
-                                @endforelse
+                                    <div>
+                                        <p class="text-sm text-white/80">Total Format</p>
+                                        <p class="text-lg font-semibold text-white">Per Divisi</p>
+                                    </div>
+                                </div>
                             </div>
+                        </div>
+                        <div class="divide-y divide-gray-100">
+                            @forelse($divisionUploadCounts as $division)
+                                <div class="flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 21V8a2 2 0 012-2h3m6 0h3a2 2 0 012 2v13M9 21V5a2 2 0 012-2h2a2 2 0 012 2v16" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <p class="font-semibold text-gray-900">{{ $division['name'] }}</p>
+                                            <p class="text-xs text-gray-500">Jumlah format</p>
+                                        </div>
+                                    </div>
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-[#e8f1fb] text-[#0057b7] border border-[#c7d9f3]">
+                                        {{ number_format($division['count']) }}
+                                    </span>
+                                </div>
+                            @empty
+                                <div class="px-6 py-5 text-sm text-gray-500">Belum ada format yang tercatat.</div>
+                            @endforelse
                         </div>
                     </div>
                 </div>
@@ -242,7 +190,7 @@
         <div class="bg-white overflow-hidden shadow-lg rounded-lg border border-gray-200 hover:shadow-xl transition-shadow duration-200">
             <div class="bg-[#0057b7] px-6 py-4 border-b border-[#004a99]">
                 <div class="flex items-center">
-                    <div cla                                            ss="flex-shrink-0 bg-[#004a99] rounded-lg p-2">
+                    <div class="flex-shrink-0 bg-[#004a99] rounded-lg p-2">
                         <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                         </svg>
