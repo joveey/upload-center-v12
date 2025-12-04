@@ -128,6 +128,115 @@
             </div>
             @endif
 
+            {{-- Admin stats and alerts --}}
+            @if(auth()->user()->division->is_super_user)
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    <div class="bg-white shadow-lg rounded-2xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 rounded-xl bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Total Format</p>
+                                    <p class="text-2xl font-bold text-gray-900">{{ number_format($stats['total_formats'] ?? 0) }}</p>
+                                </div>
+                            </div>
+                            <div class="text-xs px-3 py-1 rounded-full bg-[#e8f1fb] text-[#0057b7] border border-[#c7d9f3]">Legacy: {{ number_format($stats['legacy_formats'] ?? 0) }}</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 mt-4 text-sm">
+                            <div class="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                                <p class="text-gray-600">Rows 30 hari</p>
+                                <p class="font-semibold text-gray-900">{{ number_format($stats['uploads_30d'] ?? 0) }}</p>
+                            </div>
+                            <div class="p-3 bg-red-50 rounded-xl border border-red-200">
+                                <p class="text-red-700">Upload gagal 7 hari</p>
+                                <p class="font-semibold text-red-800">{{ number_format($stats['failed_7d'] ?? 0) }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white shadow-lg rounded-2xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 rounded-xl bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v8m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V9a2 2 0 012-2h2a2 2 0 012 2v8a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Top Format (rows import)</p>
+                                    <p class="text-xs text-gray-500">5 format teratas</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="space-y-3">
+                            @forelse($stats['top_formats'] ?? [] as $item)
+                                <div class="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="font-semibold text-gray-900">{{ $item->mappingIndex->description ?? $item->mappingIndex->code ?? 'Format' }}</p>
+                                            <p class="text-xs text-gray-500">{{ $item->uploads }} upload</p>
+                                        </div>
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-[#e8f1fb] text-[#0057b7] border border-[#c7d9f3]">
+                                            {{ number_format($item->total_rows ?? 0) }}
+                                        </span>
+                                    </div>
+                                </div>
+                            @empty
+                                <p class="text-sm text-gray-500">Belum ada data upload.</p>
+                            @endforelse
+                        </div>
+                    </div>
+
+                    <div class="bg-white shadow-lg rounded-2xl border border-gray-200 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 rounded-xl bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Kesehatan Sistem</p>
+                                    <p class="text-xs text-gray-500">Cek koneksi & log</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex items-center justify-between p-3 rounded-lg border {{ ($stats['health']['default_db'] ?? false) ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700' }}">
+                                <span>DB Default</span>
+                                <span class="font-semibold">{{ ($stats['health']['default_db'] ?? false) ? 'OK' : 'Down' }}</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 rounded-lg border {{ ($stats['health']['legacy_db'] ?? false) ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700' }}">
+                                <span>DB Legacy</span>
+                                <span class="font-semibold">{{ ($stats['health']['legacy_db'] ?? false) ? 'OK' : 'Down' }}</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 rounded-lg border {{ ($stats['health']['logs'] ?? false) ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700' }}">
+                                <span>Tabel Log</span>
+                                <span class="font-semibold">{{ ($stats['health']['logs'] ?? false) ? 'OK' : 'Down' }}</span>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <p class="text-xs text-gray-500">Upload gagal (5 terakhir):</p>
+                            <div class="space-y-2 mt-2">
+                                @forelse($stats['failed_uploads'] ?? [] as $fail)
+                                    <div class="p-2 rounded-lg border border-red-200 bg-red-50 text-xs text-red-700">
+                                        {{ optional($fail->created_at)->format('d M H:i') }} —
+                                        {{ $fail->mappingIndex->description ?? $fail->mappingIndex->code ?? 'Format' }} —
+                                        {{ $fail->file_name ?? '-' }}
+                                    </div>
+                                @empty
+                                    <p class="text-xs text-gray-500">Tidak ada kegagalan terbaru.</p>
+                                @endforelse
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <div class="lg:col-span-2">
         <div class="bg-white overflow-hidden shadow-lg rounded-lg border border-gray-200 hover:shadow-xl transition-shadow duration-200">

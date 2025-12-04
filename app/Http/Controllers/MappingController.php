@@ -151,6 +151,24 @@ class MappingController extends Controller
             Log::info("Pemetaan kolom berhasil disimpan.");
 
             DB::commit();
+
+            // Log activity: create format
+            try {
+                \App\Models\UploadLog::create([
+                    'user_id' => Auth::id(),
+                    'division_id' => Auth::user()->division_id,
+                    'mapping_index_id' => $mappingIndex->id,
+                    'file_name' => $validated['name'],
+                    'rows_imported' => 0,
+                    'status' => 'success',
+                    'action' => 'create_format',
+                    'upload_mode' => null,
+                    'error_message' => null,
+                ]);
+            } catch (\Throwable $logException) {
+                Log::warning('Gagal mencatat log pembuatan format: ' . $logException->getMessage());
+            }
+
             return redirect()->route('dashboard')->with('success', "Format '{$validated['name']}' berhasil disimpan dan tabel '{$tableName}' telah dibuat dengan dukungan period_date!");
         } catch (\Exception $e) {
             DB::rollBack();
@@ -176,7 +194,10 @@ class MappingController extends Controller
                 $like = '%' . $search . '%';
                 $q->where('description', 'like', $like)
                     ->orWhere('code', 'like', $like)
-                    ->orWhere('table_name', 'like', $like);
+                    ->orWhere('table_name', 'like', $like)
+                    ->orWhereHas('division', function ($dq) use ($like) {
+                        $dq->where('name', 'like', $like);
+                    });
             });
         }
 
@@ -206,10 +227,8 @@ class MappingController extends Controller
         });
         
         $totalFormats = $mappings->total();
-        $totalColumns = \App\Models\MappingColumn::whereIn(
-            'mapping_index_id',
-            (clone $query)->select('id')
-        )->count();
+        $idsQuery = (clone $query)->reorder()->select('id'); // remove order by for subquery
+        $totalColumns = \App\Models\MappingColumn::whereIn('mapping_index_id', $idsQuery)->count();
         $totalRowsCurrentPage = $mappings->getCollection()->sum('row_count');
         $avgColumns = $totalFormats > 0 ? round($totalColumns / $totalFormats, 1) : 0;
 
@@ -1812,7 +1831,7 @@ class MappingController extends Controller
             
             // Step 5: Log the upload
             $previousConnection = DB::getDefaultConnection();
-            DB::setDefaultConnection(config('database.default'));
+                DB::setDefaultConnection(config('database.default'));
             try {
                 \App\Models\UploadLog::create([
                     'user_id' => Auth::id(),
@@ -1821,6 +1840,8 @@ class MappingController extends Controller
                     'file_name' => $request->file('data_file')->getClientOriginalName(),
                     'rows_imported' => $totalRows,
                     'status' => 'success',
+                    'action' => 'upload',
+                    'upload_mode' => $uploadMode,
                     'error_message' => null,
                 ]);
             } finally {

@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LegacyFormatController;
 use App\Http\Controllers\MappingController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\UploadLogController;
 use Illuminate\Support\Facades\Route;
 
 // Public Welcome Page (accessible by everyone)
@@ -67,6 +68,10 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/legacy-format/{mapping}', [LegacyFormatController::class, 'index'])
         ->name('legacy.format.index');
+
+    // Activity log
+    Route::get('/activity', [UploadLogController::class, 'index'])
+        ->name('logs.index');
 });
 
 require __DIR__.'/auth.php';

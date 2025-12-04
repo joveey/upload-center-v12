@@ -20,6 +20,8 @@ class UploadLog extends Model
         'rows_imported',
         'status',
         'error_message',
+        'action',
+        'upload_mode',
     ];
 
     protected $casts = [

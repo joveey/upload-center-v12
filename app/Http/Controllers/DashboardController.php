@@ -31,12 +31,14 @@ class DashboardController extends Controller
             ->latest()
             ->take(10)
             ->get();
+        $stats = $this->getDashboardStats();
 
         return view('dashboard', [
             'mappings' => $mappings,
             'uploadStats' => $uploadStats,
             'divisionUploadCounts' => $divisionUploadCounts,
             'recentActivities' => $recentActivities,
+            'stats' => $stats,
         ]);
     }
 
@@ -46,37 +48,30 @@ class DashboardController extends Controller
     private function getDivisionUploadCounts(): array
     {
         $divisions = \App\Models\Division::pluck('name', 'id');
+        $legacyLabel = 'Legacy';
 
-        $rows = DB::table('upload_logs as ul')
-            ->leftJoin('mapping_indices as mi', 'mi.id', '=', 'ul.mapping_index_id')
-            ->leftJoin('users as u', 'u.id', '=', 'ul.user_id')
-            ->selectRaw('COALESCE(u.division_id, ul.division_id, mi.division_id) as division_id, COUNT(*) as total')
-            ->groupBy(DB::raw('COALESCE(u.division_id, ul.division_id, mi.division_id)'))
-            ->get();
-
-        $counts = [];
-
-        // Aggregate from upload logs
-        foreach ($rows as $row) {
-            $divisionId = $row->division_id;
-            $name = $divisions[$divisionId] ?? 'Tanpa Divisi';
-            $counts[$name] = ($counts[$name] ?? 0) + (int) $row->total;
-        }
-
-        // Fallback: aggregate from actual data tables per mapping division
+        // Hitung jumlah format per divisi (bukan upload rows)
+        $formatCounts = [];
         $mappings = \App\Models\MappingIndex::select('id', 'division_id', 'table_name')->get();
         foreach ($mappings as $mapping) {
-            if ($mapping->table_name && Schema::hasTable($mapping->table_name)) {
-                $rowCount = DB::table($mapping->table_name)->count();
-                if ($rowCount > 0) {
-                    $name = $divisions[$mapping->division_id] ?? 'Tanpa Divisi';
-                    $counts[$name] = ($counts[$name] ?? 0) + $rowCount;
-                }
-            }
+            // Jika tabel hanya ada di legacy, anggap milik Legacy
+            $isLegacy = $mapping->table_name
+                && !Schema::hasTable($mapping->table_name)
+                && Schema::connection('sqlsrv_legacy')->hasTable($mapping->table_name);
+
+            $name = $isLegacy
+                ? $legacyLabel
+                : ($divisions[$mapping->division_id] ?? $legacyLabel);
+
+            $formatCounts[$name] = ($formatCounts[$name] ?? 0) + 1;
         }
 
-        return collect($counts)
-            ->map(fn ($count, $name) => ['name' => $name, 'count' => $count])
+        // Pastikan semua divisi muncul, default 0
+        $filteredDivisions = $divisions->filter(fn ($name) => !in_array($name, ['Super Admin', 'SuperUser'], true));
+        $allNames = array_unique(array_merge(array_values($filteredDivisions->toArray()), [$legacyLabel], array_keys($formatCounts)));
+
+        return collect($allNames)
+            ->map(fn ($name) => ['name' => $name, 'count' => $formatCounts[$name] ?? 0])
             ->sortByDesc('count')
             ->values()
             ->all();
@@ -130,6 +125,61 @@ class DashboardController extends Controller
         return [
             'labels' => $labels,
             'datasets' => $datasets,
+        ];
+    }
+
+    /**
+     * Additional dashboard stats and alerts.
+     */
+    private function getDashboardStats(): array
+    {
+        $totalFormats = MappingIndex::count();
+        $legacyFormats = MappingIndex::all()->filter(function ($m) {
+            $table = $m->table_name;
+            return $table && !Schema::hasTable($table) && Schema::connection('sqlsrv_legacy')->hasTable($table);
+        })->count();
+
+        $uploads30 = \App\Models\UploadLog::where('action', 'upload')
+            ->where('status', 'success')
+            ->where('created_at', '>=', now()->subDays(30))
+            ->sum('rows_imported');
+
+        $failed7 = \App\Models\UploadLog::where('action', 'upload')
+            ->where('status', '!=', 'success')
+            ->where('created_at', '>=', now()->subDays(7))
+            ->count();
+
+        $topFormats = \App\Models\UploadLog::selectRaw('mapping_index_id, SUM(rows_imported) as total_rows, COUNT(*) as uploads')
+            ->where('action', 'upload')
+            ->where('status', 'success')
+            ->groupBy('mapping_index_id')
+            ->orderByDesc('total_rows')
+            ->with('mappingIndex')
+            ->take(5)
+            ->get();
+
+        $failedUploads = \App\Models\UploadLog::with(['mappingIndex', 'user', 'division'])
+            ->where('action', 'upload')
+            ->where('status', '!=', 'success')
+            ->latest()
+            ->take(5)
+            ->get();
+
+        // Simple health check
+        $health = [
+            'default_db' => Schema::hasTable('mapping_indices'),
+            'legacy_db' => Schema::connection('sqlsrv_legacy')->hasTable('mapping_indices'),
+            'logs' => Schema::hasTable('upload_logs'),
+        ];
+
+        return [
+            'total_formats' => $totalFormats,
+            'legacy_formats' => $legacyFormats,
+            'uploads_30d' => $uploads30,
+            'failed_7d' => $failed7,
+            'top_formats' => $topFormats,
+            'failed_uploads' => $failedUploads,
+            'health' => $health,
         ];
     }
 
@@ -222,6 +272,23 @@ class DashboardController extends Controller
             Log::error('Gagal membuat tabel/format: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage())->withInput();
+        }
+
+        // Catat log pembuatan format (fallback untuk alur ini)
+        try {
+            \App\Models\UploadLog::create([
+                'user_id' => Auth::id(),
+                'division_id' => Auth::user()->division_id,
+                'mapping_index_id' => $mappingIndex->id,
+                'file_name' => $validated['name'],
+                'rows_imported' => 0,
+                'status' => 'success',
+                'action' => 'create_format',
+                'upload_mode' => null,
+                'error_message' => null,
+            ]);
+        } catch (\Throwable $logEx) {
+            Log::warning('Gagal mencatat log pembuatan format (dashboard store): ' . $logEx->getMessage());
         }
     }
 }
