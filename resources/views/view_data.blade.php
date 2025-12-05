@@ -29,7 +29,7 @@
                     </svg>
                     Export Excel
                 </a>
-                @can('register format')
+                @role('super-admin')
                     <form method="POST" action="{{ route('mapping.clear.data', $mapping->id) }}">
                         @csrf
                         @method('DELETE')
@@ -55,7 +55,7 @@
                             Hapus Format
                         </button>
                     </form>
-                @endcan
+                @endrole
             </div>
         </div>
     </x-slot>

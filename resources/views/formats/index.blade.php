@@ -29,7 +29,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
                     </svg>
                 </form>
-                @can('register format')
+                @role('super-admin')
                     <a href="{{ route('mapping.register.form') }}">
                         <button class="inline-flex items-center px-5 py-2.5 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -38,7 +38,7 @@
                             Buat Format Baru
                         </button>
                     </a>
-                @endcan
+                @endrole
             </div>
         </div>
     </x-slot>
@@ -246,7 +246,7 @@
                                 </a>
                             </div>
 
-                            @can('register format')
+                            @role('super-admin')
                                 <div class="mt-4 rounded-2xl border border-amber-100 bg-gradient-to-br from-[#fff7ed] via-[#fff3e6] to-[#ffe8dc] p-4 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)] space-y-4">
                                     <div class="flex items-start space-x-3">
                                         <div class="flex-1 space-y-1">
@@ -297,7 +297,7 @@
                                         </form>
                                     </div>
                                 </div>
-                            @endcan
+                            @endrole
                         </div>
                     </div>
                 @empty
@@ -308,7 +308,7 @@
                             </svg>
                             <h3 class="text-xl font-bold text-gray-900 mb-2">Belum Ada Format</h3>
                             <p class="text-gray-600 mb-6">Buat format baru untuk memulai mengelola data Excel Anda</p>
-                            @can('register format')
+                            @role('super-admin')
                                 {{-- Diubah: Tombol pada state kosong --}}
                                 <a href="{{ route('mapping.register.form') }}" 
                                    class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-[#003b7a] hover:to-[#0091cf] focus:outline-none focus:ring-4 focus:ring-[#0057b7]/40 transition-all duration-300 shadow-lg hover:shadow-xl">
@@ -317,7 +317,7 @@
                                     </svg>
                                     Buat Format Pertama
                                 </a>
-                            @endcan
+                            @endrole
                         </div>
                     </div>
                 @endforelse

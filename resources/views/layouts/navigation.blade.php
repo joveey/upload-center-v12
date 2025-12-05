@@ -41,6 +41,15 @@
                         {{ __('Logs') }}
                     </a>
 
+                    @if(auth()->user()?->hasRole('super-admin'))
+                        <a href="{{ route('admin.users.index') }}" class="inline-flex items-center px-1 pt-1 border-b-2 {{ request()->routeIs('admin.users.*') ? 'border-[#0057b7] text-[#0f172a]' : 'border-transparent text-gray-500 hover:text-[#0f172a] hover:border-[#c7d9f3]' }} text-sm font-medium leading-5 focus:outline-none focus:border-[#004a99] transition duration-150 ease-in-out">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2a3 3 0 00-.879-2.121M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2a3 3 0 01.879-2.121M12 12a5 5 0 100-10 5 5 0 000 10zm0 0c1.657 0 3 1.79 3 4v1m-3-5c-1.657 0-3 1.79-3 4v1" />
+                            </svg>
+                            {{ __('Users') }}
+                        </a>
+                    @endif
+
                     @can('register format')
                         <a href="{{ route('mapping.register.form') }}" class="inline-flex items-center px-1 pt-1 border-b-2 {{ request()->routeIs('mapping.*') ? 'border-[#0057b7] text-[#0f172a]' : 'border-transparent text-gray-500 hover:text-[#0f172a] hover:border-[#c7d9f3]' }} text-sm font-medium leading-5 focus:outline-none focus:border-[#004a99] transition duration-150 ease-in-out">
                             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -120,12 +129,9 @@
                         </svg>
                         Masuk
                     </a>
-                    <a href="{{ route('register') }}" class="inline-flex items-center px-4 py-2 bg-[#0057b7] border border-transparent rounded-lg font-bold text-sm text-white hover:bg-[#004a99] focus:outline-none focus:ring-2 focus:ring-[#0057b7] focus:ring-offset-2 transition-all duration-200 shadow-sm hover:shadow-md">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
-                        </svg>
-                        Daftar
-                    </a>
+                    <div class="inline-flex items-center px-4 py-2 bg-gray-100 border border-gray-200 rounded-lg font-semibold text-sm text-gray-600">
+                        Registrasi ditutup
+                    </div>
                 </div>
                 @endauth
             </div>
@@ -157,6 +163,12 @@
             <a href="{{ route('logs.index') }}" class="block pl-3 pr-4 py-2 border-l-4 {{ request()->routeIs('logs.*') ? 'border-[#0057b7] text-[#004a99] bg-[#e8f1fb]' : 'border-transparent text-gray-600 hover:text-[#0f172a] hover:bg-[#eef4fc] hover:border-[#c7d9f3]' }} text-base font-medium transition duration-150 ease-in-out">
                 {{ __('Logs') }}
             </a>
+
+            @if(auth()->user()?->hasRole('super-admin'))
+                <a href="{{ route('admin.users.index') }}" class="block pl-3 pr-4 py-2 border-l-4 {{ request()->routeIs('admin.users.*') ? 'border-[#0057b7] text-[#004a99] bg-[#e8f1fb]' : 'border-transparent text-gray-600 hover:text-[#0f172a] hover:bg-[#eef4fc] hover:border-[#c7d9f3]' }} text-base font-medium transition duration-150 ease-in-out">
+                    {{ __('Users') }}
+                </a>
+            @endif
 
             @can('register format')
                 <a href="{{ route('mapping.register.form') }}" class="block pl-3 pr-4 py-2 border-l-4 {{ request()->routeIs('mapping.*') ? 'border-[#0057b7] text-[#004a99] bg-[#e8f1fb]' : 'border-transparent text-gray-600 hover:text-[#0f172a] hover:bg-[#eef4fc] hover:border-[#c7d9f3]' }} text-base font-medium transition duration-150 ease-in-out">
@@ -201,14 +213,9 @@
                     Masuk
                 </div>
             </a>
-            <a href="{{ route('register') }}" class="block pl-3 pr-4 py-2 border-l-4 border-[#0057b7] text-[#004a99] bg-[#e8f1fb] text-base font-medium transition duration-150 ease-in-out">
-                <div class="flex items-center">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
-                    </svg>
-                    Daftar
-                </div>
-            </a>
+            <div class="block pl-3 pr-4 py-2 border-l-4 border-gray-200 text-gray-600 bg-gray-50 text-base font-medium">
+                Registrasi ditutup
+            </div>
         </div>
         @endauth
     </div>
