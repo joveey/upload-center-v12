@@ -249,7 +249,7 @@
                                     </label>
                                     <p class="pl-1">atau drag & drop</p>
                                 </div>
-                                <p class="text-xs text-gray-500">XLSX, XLS hingga 40MB</p>
+                                <p class="text-xs text-gray-500">XLSX, XLS</p>
                             </div>
                         </div>
                         <p id="file-name" class="mt-3 text-sm text-gray-700 font-medium hidden bg-[#e8f1fb] p-2 rounded-lg border border-[#c7d9f3]"></p>
@@ -263,6 +263,19 @@
                             </svg>
                             Preview & Konfigurasi
                         </button>
+                        <div class="mt-4 space-y-2">
+                            <label for="upload_mode_direct" class="block text-sm font-semibold text-gray-700">Mode Upload Langsung</label>
+                            <select id="upload_mode_direct" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 focus:ring-opacity-50">
+                                <option value="strict">Strict (replace period)</option>
+                                <option value="upsert">Upsert (gabung kunci unik)</option>
+                            </select>
+                            <button type="button" id="directUploadButton" class="mt-2 w-full inline-flex justify-center items-center px-5 py-3 bg-green-600 hover:bg-green-700 border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                </svg>
+                                Upload Langsung
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -415,16 +428,12 @@
             const mappingDropdown = document.getElementById('mapping_dropdown');
             const mappingData = @json($mappings->map(function($m){ return ['id'=>$m->id, 'label'=>$m->description ?? $m->code]; }));
             const createFormatUrl = '{{ route("mapping.register.form") }}';
+            const directUploadButton = document.getElementById('directUploadButton');
+            const uploadModeDirect = document.getElementById('upload_mode_direct');
             
             // Handle file input change
             fileInput.addEventListener('change', function() {
                 if (this.files[0]) {
-                    if (this.files[0].size > 40 * 1024 * 1024) {
-                        alert('���?O Ukuran file maksimal 40MB');
-                        fileInput.value = '';
-                        fileName.classList.add('hidden');
-                        return;
-                    }
                     fileName.textContent = this.files[0].name;
                     fileName.classList.remove('hidden');
                 } else {
@@ -529,12 +538,6 @@
                     
                     if (!validTypes.includes(file.type) && !file.name.match(/\.(xlsx|xls)$/i)) {
                         alert('�?O File harus berformat Excel (.xlsx atau .xls)');
-                        return;
-                    }
-
-                    // Check file size (40MB)
-                    if (file.size > 40 * 1024 * 1024) {
-                        alert('�?O Ukuran file maksimal 40MB');
                         return;
                     }
 
@@ -751,6 +754,53 @@
 
             closeModal.addEventListener('click', () => modal.classList.add('hidden'));
             closeModalX.addEventListener('click', () => modal.classList.add('hidden'));
+
+            // Direct upload handler (skips preview)
+            if (directUploadButton) {
+                directUploadButton.addEventListener('click', function() {
+                    const mappingId = document.getElementById('mapping_id_hidden').value;
+                    if (!mappingId) {
+                        alert('Pilih format terlebih dahulu');
+                        return;
+                    }
+                    if (!fileInput.files[0]) {
+                        alert('Pilih file terlebih dahulu');
+                        return;
+                    }
+                    const uploadMode = uploadModeDirect?.value || 'strict';
+
+                    const formData = new FormData(form);
+                    formData.append('upload_mode', uploadMode);
+                    if (currentSheetName) {
+                        formData.append('sheet_name', currentSheetName);
+                    }
+
+                    directUploadButton.disabled = true;
+                    directUploadButton.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Mengunggah...';
+
+                    fetch('{{ route("upload.process") }}', {
+                        method: 'POST',
+                        body: formData
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                alert(data.message);
+                                window.location.reload();
+                            } else {
+                                alert(data.message || 'Error uploading data');
+                                directUploadButton.disabled = false;
+                                directUploadButton.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Upload Langsung';
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert('Terjadi kesalahan saat upload');
+                            directUploadButton.disabled = false;
+                            directUploadButton.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Upload Langsung';
+                        });
+                });
+            }
         });
     </script>
 
@@ -786,4 +836,9 @@
     </style>
     @endpush
 </x-app-layout>
+
+
+
+
+
 

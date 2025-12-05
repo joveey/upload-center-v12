@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MappingColumn;
 use App\Models\MappingIndex;
+use App\Services\QsvExcelConverter;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -323,7 +325,7 @@ class MappingController extends Controller
             ]);
 
             $validated = $request->validate([
-                'data_file' => ['required', File::types(['xlsx', 'xls'])->max(40960)], // 40 MB
+                'data_file' => ['required', File::types(['xlsx', 'xls'])],
                 'header_row' => ['required', 'integer', 'min:1'],
             ]);
 
@@ -372,7 +374,7 @@ class MappingController extends Controller
         try {
             @set_time_limit(300);
             $validated = $request->validate([
-                'data_file' => ['required', File::types(['xlsx', 'xls'])->max(40960)], // 40 MB
+                'data_file' => ['required', File::types(['xlsx', 'xls'])],
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
                 'sheet_name' => ['nullable', 'string'],
             ]);
@@ -1286,6 +1288,8 @@ class MappingController extends Controller
         $csvHandle = null;
         $useBulkInsert = false;
         $rowsSinceLog = 0;
+        $convertedCsvPath = null;
+        $storedXlsxPath = null;
         
         try {
             // Allow PHP to notice when client disconnects so we can stop early
@@ -1293,7 +1297,7 @@ class MappingController extends Controller
             @set_time_limit(0);
             @ini_set('max_execution_time', '0');
             $validated = $request->validate([
-                'data_file' => ['required', File::types(['xlsx', 'xls'])->max(40960)], // 40 MB
+                'data_file' => ['required', File::types(['xlsx', 'xls'])],
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
                 'selected_columns' => ['nullable', 'string'],
                 'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
@@ -1423,8 +1427,20 @@ class MappingController extends Controller
             }
 
             // Stream data rows after header
-            $excelPath = $request->file('data_file')->getPathname();
+            $uploadedFile = $request->file('data_file');
+            $storedName = 'upload_' . Str::random(16) . '.xlsx';
+            Storage::disk('local')->makeDirectory('tmp');
+            $storedRelativePath = $uploadedFile->storeAs('tmp', $storedName, 'local');
+            if (! $storedRelativePath) {
+                throw new \RuntimeException('Gagal menyimpan file upload ke storage/tmp');
+            }
+            $excelPath = Storage::disk('local')->path($storedRelativePath);
+            $storedXlsxPath = $excelPath;
             $aborted = false;
+            $tmpDir = storage_path('app/tmp');
+            if (!is_dir($tmpDir)) {
+                mkdir($tmpDir, 0777, true);
+            }
             // Use a pipe delimiter for SQL Server bulk insert to avoid commas inside data shifting columns
             $bulkDelimiter = '|';
             $orderedColumns = array_values($columnMapping);
@@ -1435,11 +1451,10 @@ class MappingController extends Controller
             );
             $columnIndexes = [];
             foreach ($columnMapping as $excelColumn => $dbColumn) {
-                // PhpSpreadsheet column index is 1-based
-                $columnIndexes[$dbColumn] = $this->columnLetterToIndex($excelColumn) + 1;
+                // CSV index is 0-based
+                $columnIndexes[$dbColumn] = $this->columnLetterToIndex($excelColumn);
             }
             $dataStartRow = max(1, $headerRow + 1); // 1-based row where data begins
-            $sheetRowCount = $this->getWorksheetRowCount($request->file('data_file'), $sheetName);
 
             // ========================================
             // STAGING TABLE PATTERN IMPLEMENTATION
@@ -1486,10 +1501,6 @@ class MappingController extends Controller
                 && empty($mapping->connection)
                 && empty($mapping->target_connection);
             if ($useBulkInsert) {
-                $tmpDir = storage_path('app/tmp');
-                if (!is_dir($tmpDir)) {
-                    mkdir($tmpDir, 0777, true);
-                }
                 $csvPath = $tmpDir . '/bulk_' . $stagingTableName . '_' . Str::random(6) . '.csv';
                 $csvHandle = fopen($csvPath, 'w');
                 if (!$csvHandle) {
@@ -1519,131 +1530,121 @@ class MappingController extends Controller
             $totalRows = 0;
             $chunksInserted = 0;
             $rowsSinceLog = 0;
+            // Faster XLSX -> CSV conversion via qsv
+            $convertedCsvPath = $tmpDir . '/qsv_input_' . Str::random(8) . '.csv';
+            $convertStart = microtime(true);
+            Log::info('QSV convert start', [
+                'xlsx' => $excelPath,
+                'csv' => $convertedCsvPath,
+                'sheet' => $sheetName,
+            ]);
+            app(QsvExcelConverter::class)->convertXlsxToCsv($excelPath, $convertedCsvPath, $sheetName);
+            $convertDuration = round(microtime(true) - $convertStart, 2);
+            Log::info('QSV convert finished', [
+                'xlsx' => $excelPath,
+                'csv' => $convertedCsvPath,
+                'sheet' => $sheetName,
+                'seconds' => $convertDuration,
+            ]);
             $streamStart = microtime(true);
 
-            $reader = IOFactory::createReaderForFile($excelPath);
-            $reader->setReadDataOnly(true);
-            if (method_exists($reader, 'setLoadSheetsOnly')) {
-                $reader->setLoadSheetsOnly([$sheetName]);
+            $csvInput = fopen($convertedCsvPath, 'r');
+            if (! $csvInput) {
+                throw new \RuntimeException("Gagal membuka hasil konversi qsv: {$convertedCsvPath}");
             }
 
-            $chunkRowCount = 5000; // rows per read chunk to control memory
-            $startRow = $dataStartRow;
+            $rowNumber = 0;
+            while (($row = fgetcsv($csvInput)) !== false) {
+                $rowNumber++;
 
-            while ($startRow <= $sheetRowCount) {
+                if ($rowNumber < $dataStartRow) {
+                    continue; // Skip header rows
+                }
+
                 if ($cancelKey && Cache::get($cancelKey)) {
-                    Log::warning("Upload canceled via flag before reading chunk starting at row {$startRow}");
+                    Log::warning("Upload canceled via flag before processing row {$rowNumber}");
                     $aborted = true;
                     break;
                 }
 
                 if (function_exists('connection_aborted') && connection_aborted()) {
-                    Log::warning("Upload aborted by client before reading chunk starting at row {$startRow}.");
+                    Log::warning("Upload aborted by client before processing row {$rowNumber}.");
                     $aborted = true;
                     break;
                 }
 
-                $filter = new class($startRow, $chunkRowCount) implements IReadFilter {
-                    public function __construct(private int $startRow, private int $chunkSize) {}
-                    public function readCell($column, $row, $worksheetName = ''): bool
-                    {
-                        return $row >= $this->startRow && $row < ($this->startRow + $this->chunkSize);
-                    }
-                };
+                $rowValues = [];
+                $isEmpty = true;
 
-                if (method_exists($reader, 'setReadFilter')) {
-                    $reader->setReadFilter($filter);
-                }
-
-                $spreadsheet = $reader->load($excelPath);
-                $worksheet = $spreadsheet->getSheetByName($sheetName) ?? $spreadsheet->getSheet(0);
-
-                $endRow = min($sheetRowCount, $startRow + $chunkRowCount - 1);
-                $processedThisChunk = 0;
-
-                for ($rowIndex = $startRow; $rowIndex <= $endRow; $rowIndex++) {
-                    $rowValues = [];
-                    $isEmpty = true;
-
-                    foreach ($orderedColumns as $dbColumn) {
-                        $colIndex = $columnIndexes[$dbColumn] ?? null;
-                        if ($colIndex === null) {
-                            $rowValues[] = null;
-                            continue;
-                        }
-
-                        $cellValue = $worksheet->getCellByColumnAndRow($colIndex, $rowIndex)->getValue();
-
-                        if (is_string($cellValue)) {
-                            $cellValue = trim($cellValue);
-
-                            // For bulk insert, strip delimiter/newline characters that would break row parsing
-                            if ($useBulkInsert) {
-                                $cellValue = str_replace([$bulkDelimiter, "\r", "\n"], ' ', $cellValue);
-                            }
-                        }
-
-                        if ($cellValue === '') {
-                            $cellValue = null;
-                        }
-
-                        if ($cellValue !== null && $cellValue !== '') {
-                            $isEmpty = false;
-                        }
-
-                        // Convert Excel date serials/strings for transaction_date column
-                        if ($dbColumn === 'transaction_date' && $cellValue !== null && $cellValue !== '') {
-                            $converted = $this->convertExcelDate($cellValue);
-                            $cellValue = $converted;
-                        }
-
-                        $rowValues[] = $cellValue;
-                    }
-
-                    if ($isEmpty) {
+                foreach ($orderedColumns as $dbColumn) {
+                    $colIndex = $columnIndexes[$dbColumn] ?? null;
+                    if ($colIndex === null) {
+                        $rowValues[] = null;
                         continue;
                     }
 
-                    // Append audit columns
-                    if ($hasPeriodDate) {
-                        $rowValues[] = $periodDate;
-                    }
-                    $rowValues[] = $nowStringSanitized;
-                    $rowValues[] = $nowStringSanitized;
+                    $cellValue = $row[$colIndex] ?? null;
 
-                    if ($useBulkInsert) {
-                        fputcsv($csvHandle, $rowValues, $bulkDelimiter);
-                    } else {
-                        $chunk[] = array_combine($stagingColumns, $rowValues);
-                        if (count($chunk) >= $chunkSize) {
-                            DB::table($stagingTableName)->insert($chunk);
-                            $chunksInserted++;
-                            $chunk = [];
-                            @set_time_limit(0);
+                    if (is_string($cellValue)) {
+                        $cellValue = trim($cellValue);
+
+                        // For bulk insert, strip delimiter/newline characters that would break row parsing
+                        if ($useBulkInsert) {
+                            $cellValue = str_replace([$bulkDelimiter, "\r", "\n"], ' ', $cellValue);
                         }
                     }
 
-                    $totalRows++;
-                    $rowsSinceLog++;
-                    $processedThisChunk++;
+                    if ($cellValue === '') {
+                        $cellValue = null;
+                    }
 
-                    if ($rowsSinceLog >= 5000) {
-                        Log::info("Upload progress: {$totalRows} rows processed so far (chunk size {$chunkSize})");
-                        $rowsSinceLog = 0;
+                    if ($cellValue !== null && $cellValue !== '') {
+                        $isEmpty = false;
+                    }
+
+                    // Convert Excel date serials/strings for transaction_date column
+                    if ($dbColumn === 'transaction_date' && $cellValue !== null && $cellValue !== '') {
+                        $converted = $this->convertExcelDate($cellValue);
+                        $cellValue = $converted;
+                    }
+
+                    $rowValues[] = $cellValue;
+                }
+
+                if ($isEmpty) {
+                    continue;
+                }
+
+                // Append audit columns
+                if ($hasPeriodDate) {
+                    $rowValues[] = $periodDate;
+                }
+                $rowValues[] = $nowStringSanitized;
+                $rowValues[] = $nowStringSanitized;
+
+                if ($useBulkInsert) {
+                    fputcsv($csvHandle, $rowValues, $bulkDelimiter);
+                } else {
+                    $chunk[] = array_combine($stagingColumns, $rowValues);
+                    if (count($chunk) >= $chunkSize) {
+                        DB::table($stagingTableName)->insert($chunk);
+                        $chunksInserted++;
+                        $chunk = [];
+                        @set_time_limit(0);
                     }
                 }
 
-                $spreadsheet->disconnectWorksheets();
-                unset($spreadsheet);
-                gc_collect_cycles();
+                $totalRows++;
+                $rowsSinceLog++;
 
-                if ($processedThisChunk === 0) {
-                    // No data in this chunk; stop early
-                    break;
+                if ($rowsSinceLog >= 5000) {
+                    Log::info("Upload progress: {$totalRows} rows processed so far (chunk size {$chunkSize})");
+                    $rowsSinceLog = 0;
                 }
-
-                $startRow += $chunkRowCount;
             }
+
+            fclose($csvInput);
+            @unlink($convertedCsvPath);
 
             $streamDuration = round(microtime(true) - $streamStart, 2);
             Log::info("Streaming finished: {$totalRows} rows written" . ($useBulkInsert ? " to CSV {$csvPath}" : '') . " in {$streamDuration}s");
@@ -1662,6 +1663,12 @@ class MappingController extends Controller
                 Log::warning("Upload aborted; cleaning up staging table {$stagingTableName}");
                 if ($csvPath && file_exists($csvPath)) {
                     @unlink($csvPath);
+                }
+                if ($convertedCsvPath && file_exists($convertedCsvPath)) {
+                    @unlink($convertedCsvPath);
+                }
+                if ($storedXlsxPath && file_exists($storedXlsxPath)) {
+                    @unlink($storedXlsxPath);
                 }
                 Schema::dropIfExists($stagingTableName);
                 if ($cancelKey) {
@@ -1897,6 +1904,9 @@ class MappingController extends Controller
             Log::info("Step 4: Cleanup - Dropping staging table '{$stagingTableName}'");
             $this->dropStagingTable($stagingTableName, $connection);
             Log::info("Staging table dropped successfully");
+            if ($storedXlsxPath && file_exists($storedXlsxPath)) {
+                @unlink($storedXlsxPath);
+            }
             
             // Step 5: Log the upload
             $previousConnection = DB::getDefaultConnection();
@@ -1943,6 +1953,12 @@ class MappingController extends Controller
 
             if ($csvPath && file_exists($csvPath)) {
                 @unlink($csvPath);
+            }
+            if ($convertedCsvPath && file_exists($convertedCsvPath)) {
+                @unlink($convertedCsvPath);
+            }
+            if ($storedXlsxPath && file_exists($storedXlsxPath)) {
+                @unlink($storedXlsxPath);
             }
             
             if ($cancelKey) {

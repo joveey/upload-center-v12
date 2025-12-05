@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'qsv' => [
+        'path' => env('QSV_PATH', 'qsv'),
+    ],
+
 ];
