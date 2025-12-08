@@ -228,7 +228,7 @@
                                 </div>
                             @endif
 
-                            <div class="grid grid-cols-2 gap-3">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <a href="{{ route('mapping.view.data', $mapping->id) }}" 
                                    class="inline-flex items-center justify-center px-4 py-3 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
                                     <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -236,6 +236,13 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
                                     </svg>
                                     Lihat
+                                </a>
+                                <a href="{{ route('export.template', $mapping->id) }}" 
+                                   class="inline-flex items-center justify-center px-4 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-800 uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/30 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                    <svg class="w-4 h-4 mr-2 text-[#0057b7] group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m0 0l-4-4m4 4l4-4M4 8h16"></path>
+                                    </svg>
+                                    Template
                                 </a>
                                 <a href="{{ route('export.data', $mapping->id) }}" 
                                    class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">

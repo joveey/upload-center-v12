@@ -4,7 +4,7 @@
             <div>
                 <h2 class="font-bold text-2xl text-gray-900 leading-tight">Legacy Data Mappings</h2>
                 <p class="mt-1 text-sm text-gray-600">
-                    Pilih mapping legacy untuk melihat data dari koneksi/tabel terkait.
+                    Semua tabel di koneksi legacy terlihat di sini; pilih yang sudah dimapping atau mapping-kan tabel baru.
                 </p>
                 @if(!empty($search ?? ''))
                     <p class="mt-1 text-xs text-[#0057b7] font-semibold">Filter: "{{ $search }}"</p>
@@ -16,7 +16,7 @@
                         type="text"
                         name="q"
                         value="{{ $search ?? '' }}"
-                        placeholder="Cari kode, deskripsi, tabel..."
+                        placeholder="Cari tabel, kode, deskripsi..."
                         class="pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0057b7]/40 focus:border-[#0057b7] bg-white shadow-sm w-64 md:w-72"
                     />
                     <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -45,12 +45,12 @@
                                 </svg>
                             </div>
                             <div>
-                                <p class="text-sm text-[#d8e7f7]">Legacy / Mapping-driven</p>
-                                <h3 class="text-xl font-semibold">Daftar Mapping Legacy</h3>
+                                <p class="text-sm text-[#d8e7f7]">Legacy / All tables</p>
+                                <h3 class="text-xl font-semibold">Daftar Tabel Legacy</h3>
                             </div>
                         </div>
                         <div class="text-sm text-[#d8e7f7]">
-                            Klik salah satu untuk membuka data.
+                            Tabel terlihat meski belum dimapping.
                         </div>
                     </div>
                 </div>
@@ -60,28 +60,54 @@
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Code</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Deskripsi</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Schema</th>
                                     <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tabel</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mapping</th>
                                     <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-100">
                                 @forelse($mappings as $mapping)
                                     <tr class="hover:bg-[#f4f8fd] transition-colors duration-150">
-                                        <td class="px-4 py-3 text-sm font-semibold text-gray-900">{{ $mapping->code }}</td>
-                                        <td class="px-4 py-3 text-sm text-gray-800">{{ $mapping->description }}</td>
-                                        <td class="px-4 py-3 text-sm text-gray-700 font-mono">{{ $mapping->table_name ?? '—' }}</td>
+                                        <td class="px-4 py-3 text-sm font-semibold text-gray-900">{{ $mapping->schema }}</td>
+                                        <td class="px-4 py-3 text-sm text-gray-700 font-mono">{{ $mapping->table_name }}</td>
+                                        <td class="px-4 py-3 text-sm text-gray-800">
+                                            @if($mapping->is_mapped)
+                                                <div class="space-y-0.5">
+                                                    <div class="flex items-center space-x-2 text-[#0b7b31]">
+                                                        <span class="inline-flex items-center px-2 py-0.5 bg-[#e8f6ee] border border-[#c8e9d6] text-xs font-semibold rounded-md">Mapped</span>
+                                                        <span class="text-xs text-gray-600">({{ $mapping->code }})</span>
+                                                    </div>
+                                                    <div class="text-xs text-gray-600 line-clamp-2">{{ $mapping->description }}</div>
+                                                </div>
+                                            @else
+                                                <span class="inline-flex items-center px-2 py-0.5 bg-[#fff8e5] border border-[#f5e3b5] text-xs font-semibold rounded-md text-[#946200]">Belum dimapping</span>
+                                            @endif
+                                        </td>
                                         <td class="px-4 py-3 text-sm">
-                                            <a href="{{ route('legacy.format.index', $mapping->id) }}" class="inline-flex items-center px-3 py-1.5 bg-[#0057b7] hover:bg-[#004a99] text-white rounded-lg text-xs font-semibold shadow-sm transition-colors duration-150">
-                                                Buka
-                                            </a>
+                                            @if($mapping->is_mapped)
+                                                <a href="{{ route('legacy.format.index', $mapping->mapping_id) }}" class="inline-flex items-center px-3 py-1.5 bg-[#0057b7] hover:bg-[#004a99] text-white rounded-lg text-xs font-semibold shadow-sm transition-colors duration-150">
+                                                    Buka
+                                                </a>
+                                            @else
+                                                @can('register format')
+                                                    <form action="{{ route('legacy.format.quick-map') }}" method="POST" class="inline">
+                                                        @csrf
+                                                        <input type="hidden" name="table_name" value="{{ $mapping->table_name }}">
+                                                        <button type="submit" class="inline-flex items-center px-3 py-1.5 bg-white border border-[#cbd5e1] hover:border-[#0057b7] hover:text-[#0057b7] text-gray-700 rounded-lg text-xs font-semibold shadow-sm transition-colors duration-150">
+                                                            Mapping-kan
+                                                        </button>
+                                                    </form>
+                                                @else
+                                                    <span class="text-xs text-gray-500">Butuh izin register format</span>
+                                                @endcan
+                                            @endif
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
                                         <td colspan="4" class="px-4 py-6 text-center text-sm text-gray-600">
-                                            Belum ada mapping legacy yang terdaftar.
+                                            Belum ada tabel legacy yang terdeteksi.
                                         </td>
                                     </tr>
                                 @endforelse

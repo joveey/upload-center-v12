@@ -15,8 +15,8 @@ Route::get('/', function () {
 })->middleware('guest')->name('Login Page');
 
 // Dashboard (only for authenticated users)
-Route::get('/dashboard', [DashboardController::class, 'index'])
-    ->middleware(['auth', 'verified'])->name('dashboard');
+    Route::get('/dashboard', [DashboardController::class, 'index'])
+        ->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     // Profile routes
@@ -24,9 +24,11 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     
-    // Export route
+    // Export routes
     Route::get('/export/{mapping}', [App\Http\Controllers\ExportController::class, 'export'])
         ->name('export.data');
+    Route::get('/export-template/{mapping}', [App\Http\Controllers\ExportController::class, 'exportTemplate'])
+        ->name('export.template');
     
     // View data route - NEW
     Route::get('/mapping/{mapping}/view', [MappingController::class, 'viewData'])
@@ -62,6 +64,10 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/legacy-format', [LegacyFormatController::class, 'list'])
         ->name('legacy.format.list');
+
+    Route::post('/legacy-format/quick-map', [LegacyFormatController::class, 'quickMap'])
+        ->middleware('can:register format')
+        ->name('legacy.format.quick-map');
 
     Route::get('/legacy-format/{mapping}', [LegacyFormatController::class, 'index'])
         ->name('legacy.format.index');

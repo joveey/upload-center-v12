@@ -140,6 +140,87 @@ class ExportController extends Controller
     }
 
     /**
+     * Export header-only template so users can fill and re-upload data.
+     */
+    public function exportTemplate(Request $request, $mappingId)
+    {
+        @set_time_limit(0);
+        @ini_set('memory_limit', '512M');
+
+        $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
+        $columns = $mapping->columns;
+
+        if ($columns->isEmpty()) {
+            return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
+        }
+
+        // Build ordered map: numeric index (0-based) => column model
+        $orderedColumns = [];
+        $maxIndex = 0;
+        foreach ($columns as $col) {
+            $index = $this->columnLetterToIndex($col->excel_column_index);
+            $orderedColumns[$index] = $col;
+            $maxIndex = max($maxIndex, $index);
+        }
+
+        // Prepare header row respecting gaps between Excel columns (A, C, etc.)
+        $headerCells = [];
+        for ($i = 0; $i <= $maxIndex; $i++) {
+            $headerCells[] = isset($orderedColumns[$i])
+                ? $orderedColumns[$i]->table_column_name
+                : '';
+        }
+
+        $headerRowNumber = max(1, (int) $mapping->header_row);
+        $blankRow = array_fill(0, max(1, count($headerCells)), '');
+        $fileName = $mapping->code . '_template_' . date('Y-m-d') . '.xlsx';
+
+        return response()->streamDownload(function () use ($headerCells, $blankRow, $headerRowNumber, $mapping, $orderedColumns) {
+            $writer = new Writer();
+            $writer->openToFile('php://output');
+
+            // Sheet 1: Template
+            $writer->getCurrentSheet()->setName('Template');
+
+            // Add empty rows until the configured header row (if header_row > 1)
+            for ($row = 1; $row < $headerRowNumber; $row++) {
+                $writer->addRow(Row::fromValues($blankRow));
+            }
+
+            $headerStyle = (new Style())->setFontBold();
+            $writer->addRow(Row::fromValues($headerCells, $headerStyle));
+
+            // Sheet 2: Petunjuk (metadata + column guide)
+            $writer->addNewSheetAndMakeItCurrent();
+            $writer->getCurrentSheet()->setName('Petunjuk');
+
+            $writer->addRow(Row::fromValues(['Template format', $mapping->description ?? $mapping->code]));
+            $writer->addRow(Row::fromValues(['Kode format', $mapping->code]));
+            $writer->addRow(Row::fromValues(['Tabel tujuan', $mapping->table_name]));
+            $writer->addRow(Row::fromValues(['Baris header', $headerRowNumber]));
+            $writer->addRow(Row::fromValues(['Mulai isi data di baris', $headerRowNumber + 1]));
+            $writer->addRow(Row::fromValues(['Catatan', 'Jangan ubah urutan kolom atau isi baris header.']));
+            $writer->addRow(Row::fromValues([])); // spacer
+            $writer->addRow(Row::fromValues(['Kolom', 'Posisi Excel', 'Tipe Data', 'Wajib?', 'Kunci Unik?'], $headerStyle));
+
+            ksort($orderedColumns);
+            foreach ($orderedColumns as $col) {
+                $writer->addRow(Row::fromValues([
+                    $col->table_column_name,
+                    strtoupper($col->excel_column_index),
+                    ucfirst($col->data_type ?? 'string'),
+                    $col->is_required ? 'Ya' : 'Opsional',
+                    $col->is_unique_key ? 'Ya' : 'Tidak',
+                ]));
+            }
+
+            $writer->close();
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
      * Convert Excel column letters (A, Z, AA, AB, etc.) into zero-based numeric index.
      */
     private function columnLetterToIndex(string $column): int
