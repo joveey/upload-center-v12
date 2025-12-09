@@ -209,6 +209,7 @@
             <div class="p-6">
                 <form id="uploadForm" method="POST" enctype="multipart/form-data" class="space-y-5">
                     @csrf
+                    <input type="hidden" name="period_date" id="period_date_input">
                     <div class="relative">
                         <label for="mapping_search_combo" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
                             <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -297,6 +298,9 @@
                     <p class="text-sm text-[#d8e7f7]">{{ $recentActivities->count() }} entri terakhir</p>
                 </div>
             </div>
+        </div>
+        <div class="mt-6">
+            @include('components.upload-recent-card')
         </div>
     </div>
     
@@ -413,10 +417,43 @@
         </div>
     </div>
 
+    {{-- Modal Period Date for Strict mode --}}
+    <div id="periodDateModal" class="hidden fixed inset-0 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 w-96 border border-gray-200">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-7 4h4M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-900">Pilih Period Date</p>
+                        <p class="text-xs text-gray-600">Wajib untuk upload mode strict</p>
+                    </div>
+                </div>
+                <button id="cancelPeriod" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <label class="block text-sm font-medium text-gray-700">Period Date</label>
+                <input type="date" id="period_date_picker" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30" />
+                <p class="text-xs text-gray-500">Gunakan tanggal awal bulan (contoh: 2025-01-01).</p>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button id="confirmPeriod" class="px-4 py-2 bg-[#0057b7] text-white rounded-lg shadow hover:bg-[#004a99] focus:outline-none focus:ring-2 focus:ring-[#0057b7]/50">Simpan</button>
+            </div>
+        </div>
+    </div>
+
     @push('scripts')
     <script>
         let previewData = null;
         let currentSheetName = null;
+        let pendingSubmit = null;
 
         document.addEventListener('DOMContentLoaded', function() {
             const fileInput = document.getElementById('data_file');
@@ -430,6 +467,52 @@
             const createFormatUrl = '{{ route("mapping.register.form") }}';
             const directUploadButton = document.getElementById('directUploadButton');
             const uploadModeDirect = document.getElementById('upload_mode_direct');
+            const periodModal = document.getElementById('periodDateModal');
+            const periodInput = document.getElementById('period_date_input');
+            const periodPicker = document.getElementById('period_date_picker');
+            const confirmPeriod = document.getElementById('confirmPeriod');
+            const cancelPeriod = document.getElementById('cancelPeriod');
+
+            function openPeriodModal(callback) {
+                pendingSubmit = callback;
+                const today = new Date();
+                const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                periodPicker.value = periodPicker.value || firstOfMonth.toISOString().slice(0, 10);
+                periodModal.classList.remove('hidden');
+            }
+
+            function requirePeriodIfStrict(uploadMode, proceedFn) {
+                if (uploadMode !== 'strict') {
+                    proceedFn();
+                    return;
+                }
+                if (periodInput.value) {
+                    proceedFn();
+                    return;
+                }
+                openPeriodModal(proceedFn);
+            }
+
+            confirmPeriod.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (!periodPicker.value) {
+                    alert('Pilih period date.');
+                    return;
+                }
+                periodInput.value = periodPicker.value;
+                periodModal.classList.add('hidden');
+                if (pendingSubmit) {
+                    const fn = pendingSubmit;
+                    pendingSubmit = null;
+                    fn();
+                }
+            });
+
+            cancelPeriod.addEventListener('click', (e) => {
+                e.preventDefault();
+                periodModal.classList.add('hidden');
+                pendingSubmit = null;
+            });
             
             // Handle file input change
             fileInput.addEventListener('change', function() {
@@ -718,37 +801,41 @@
                 }
                 const uploadMode = uploadModeInput.value;
 
-                const formData = new FormData(form);
-                formData.append('selected_columns', JSON.stringify(selectedColumns));
-                formData.append('upload_mode', uploadMode);
-                if (currentSheetName) {
-                    formData.append('sheet_name', currentSheetName);
-                }
-                
-                confirmUpload.disabled = true;
-                confirmUpload.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Uploading...';
+                const submitUpload = () => {
+                    const formData = new FormData(form);
+                    formData.append('selected_columns', JSON.stringify(selectedColumns));
+                    formData.append('upload_mode', uploadMode);
+                    if (currentSheetName) {
+                        formData.append('sheet_name', currentSheetName);
+                    }
+                    
+                    confirmUpload.disabled = true;
+                    confirmUpload.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Uploading...';
 
-                fetch('{{ route("upload.process") }}', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert(data.message);
-                        window.location.reload();
-                    } else {
-                        alert(data.message || 'Error uploading data');
+                    fetch('{{ route("upload.process") }}', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message);
+                            window.location.reload();
+                        } else {
+                            alert(data.message || 'Error uploading data');
+                            confirmUpload.disabled = false;
+                            confirmUpload.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Upload Data';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Terjadi kesalahan saat upload');
                         confirmUpload.disabled = false;
                         confirmUpload.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Upload Data';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Terjadi kesalahan saat upload');
-                    confirmUpload.disabled = false;
-                    confirmUpload.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Upload Data';
-                });
+                    });
+                };
+
+                requirePeriodIfStrict(uploadMode, submitUpload);
             });
             // ===== END: INTEGRATED CODE =====
 
@@ -769,36 +856,40 @@
                     }
                     const uploadMode = uploadModeDirect?.value || 'strict';
 
-                    const formData = new FormData(form);
-                    formData.append('upload_mode', uploadMode);
-                    if (currentSheetName) {
-                        formData.append('sheet_name', currentSheetName);
-                    }
+                    const submitDirect = () => {
+                        const formData = new FormData(form);
+                        formData.append('upload_mode', uploadMode);
+                        if (currentSheetName) {
+                            formData.append('sheet_name', currentSheetName);
+                        }
 
-                    directUploadButton.disabled = true;
-                    directUploadButton.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Mengunggah...';
+                        directUploadButton.disabled = true;
+                        directUploadButton.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Mengunggah...';
 
-                    fetch('{{ route("upload.process") }}', {
-                        method: 'POST',
-                        body: formData
-                    })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.success) {
-                                alert(data.message);
-                                window.location.reload();
-                            } else {
-                                alert(data.message || 'Error uploading data');
+                        fetch('{{ route("upload.process") }}', {
+                            method: 'POST',
+                            body: formData
+                        })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    alert(data.message);
+                                    window.location.reload();
+                                } else {
+                                    alert(data.message || 'Error uploading data');
+                                    directUploadButton.disabled = false;
+                                    directUploadButton.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Upload Langsung';
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                alert('Terjadi kesalahan saat upload');
                                 directUploadButton.disabled = false;
                                 directUploadButton.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Upload Langsung';
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                            alert('Terjadi kesalahan saat upload');
-                            directUploadButton.disabled = false;
-                            directUploadButton.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Upload Langsung';
-                        });
+                            });
+                    };
+
+                    requirePeriodIfStrict(uploadMode, submitDirect);
                 });
             }
         });

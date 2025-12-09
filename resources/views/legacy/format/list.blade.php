@@ -23,12 +23,6 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
                     </svg>
                 </form>
-                <div class="flex items-center space-x-2 bg-[#e8f1fb] text-[#0057b7] px-3 py-2 rounded-lg border border-[#c7d9f3]">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4m0-8c2.21 0 4 1.79 4 4s-1.79 4-4 4m0-8V4m0 12v4m4-8h4m-8 0H4"/>
-                    </svg>
-                    <span class="text-sm font-semibold">Visible to all authenticated users</span>
-                </div>
             </div>
         </div>
     </x-slot>

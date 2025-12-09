@@ -4,6 +4,7 @@
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LegacyFormatController;
 use App\Http\Controllers\MappingController;
+use App\Http\Controllers\UploadRunController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UploadLogController;
 use App\Http\Controllers\UserManagementController;
@@ -41,7 +42,7 @@ Route::middleware('auth')->group(function () {
             ->name('upload.preview');
         
         // Process upload
-        Route::post('/upload/process', [MappingController::class, 'uploadData'])
+        Route::post('/upload/process', [MappingController::class, 'queueUpload'])
             ->name('upload.process');
 
         // Cancel upload (sets cancel flag)
@@ -71,6 +72,12 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/legacy-format/{mapping}', [LegacyFormatController::class, 'index'])
         ->name('legacy.format.index');
+
+    // Upload runs polling
+    Route::get('/uploads/recent', [UploadRunController::class, 'recent'])
+        ->name('uploads.recent');
+    Route::delete('/uploads/recent', [UploadRunController::class, 'clear'])
+        ->name('uploads.clear');
 
     // Activity log
     Route::get('/activity', [UploadLogController::class, 'index'])

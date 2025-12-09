@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MappingIndex;
+use App\Services\UploadIndexService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -19,8 +20,12 @@ class ExportController extends Controller
         @set_time_limit(0);
         @ini_set('memory_limit', '1024M');
 
+        /** @var UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(UploadIndexService::class);
+
         $user = Auth::user(); 
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
+        $periodFilter = $request->query('period_date');
 
         // Export dibuka untuk semua user yang login; pembatasan hanya untuk aksi hapus.
 
@@ -32,6 +37,13 @@ class ExportController extends Controller
         // Jika tabel tidak ada di koneksi terpilih tapi ada di legacy, gunakan legacy
         if (!Schema::connection($connection)->hasTable($tableName) && Schema::connection('sqlsrv_legacy')->hasTable($tableName)) {
             $connection = 'sqlsrv_legacy';
+        }
+        $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
+        if ($activeRun && $activeRun->period_date) {
+            $candidate = $uploadIndexService->buildVersionTableName($tableName, $activeRun->period_date, (int) $activeRun->upload_index);
+            if (Schema::connection($connection)->hasTable($candidate)) {
+                $tableName = $candidate;
+            }
         }
         
         // Get column mapping: excel_column => table_column_name
@@ -64,6 +76,10 @@ class ExportController extends Controller
         }
 
         $query = DB::connection($connection)->table($tableName)->select($selectColumns);
+        
+        if (in_array('upload_index', $actualTableColumns, true) && $activeRun) {
+            $query->where('upload_index', $activeRun->upload_index);
+        }
         
         if (!$this->userHasRole($user, 'super-admin')) {
             if (in_array('division_id', $actualTableColumns)) {

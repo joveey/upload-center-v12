@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MappingColumn;
 use App\Models\MappingIndex;
+use App\Services\UploadIndexService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -215,7 +216,22 @@ class LegacyFormatController extends Controller
             ->pluck('table_column_name')
             ->all();
 
+        /** @var UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(UploadIndexService::class);
+        $periodFilter = $request->query('period_date');
+        $activeRun = $uploadIndexService->getActiveRun($mappingIndex->id, $periodFilter);
+        if ($activeRun && $activeRun->period_date) {
+            $candidate = $uploadIndexService->buildVersionTableName($tableName, $activeRun->period_date, (int) $activeRun->upload_index);
+            if (Schema::connection($connection)->hasTable($candidate)) {
+                $tableName = $candidate;
+                $actualColumns = Schema::connection($connection)->getColumnListing($tableName);
+            }
+        }
+
         $query = DB::connection($connection)->table($tableName);
+        if (in_array('upload_index', $actualColumns, true) && $activeRun) {
+            $query->where('upload_index', $activeRun->upload_index);
+        }
 
         $hasIdColumn = in_array('id', $actualColumns, true);
         $orderColumn = $hasIdColumn

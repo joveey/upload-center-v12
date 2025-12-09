@@ -4,7 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\MappingColumn;
 use App\Models\MappingIndex;
+use App\Models\UploadRun;
 use App\Services\QsvExcelConverter;
+use App\Services\UploadIndexService;
+use App\Jobs\ProcessUploadJob;
+use App\Jobs\CleanupStrictVersions;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -208,7 +212,9 @@ class MappingController extends Controller
         $mappings = $query->orderBy('description')->paginate($perPage)->withQueryString();
         
         // Get statistics for each mapping
-        $mappings->getCollection()->each(function ($mapping) use ($user) {
+        /** @var UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(UploadIndexService::class);
+        $mappings->getCollection()->each(function ($mapping) use ($user, $uploadIndexService) {
             $tableName = $mapping->table_name;
             $connection = $mapping->target_connection
                 ?? $mapping->connection
@@ -221,8 +227,21 @@ class MappingController extends Controller
 
             $mapping->is_legacy_source = ($connection === 'sqlsrv_legacy');
             
-            if (Schema::connection($connection)->hasTable($tableName)) {
-                $mapping->row_count = DB::connection($connection)->table($tableName)->count();
+            $targetTable = $tableName;
+            $activeRun = $uploadIndexService->getActiveRun($mapping->id);
+            if ($activeRun && $activeRun->period_date) {
+                $candidate = $this->buildStrictVersionTableName($tableName, $activeRun->period_date, (int) $activeRun->upload_index);
+                if (Schema::connection($connection)->hasTable($candidate)) {
+                    $targetTable = $candidate;
+                }
+            }
+
+            if (Schema::connection($connection)->hasTable($targetTable)) {
+                $query = DB::connection($connection)->table($targetTable);
+                if (Schema::connection($connection)->hasColumn($targetTable, 'upload_index') && $activeRun) {
+                    $query->where('upload_index', $activeRun->upload_index);
+                }
+                $mapping->row_count = $query->count();
             } else {
                 $mapping->row_count = 0;
             }
@@ -251,16 +270,28 @@ class MappingController extends Controller
     {
         $user = Auth::user();
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
+        $periodFilter = request()->query('period_date');
 
         // Pilih koneksi DB sesuai mapping (fallback ke default/legacy)
         $connection = $mapping->target_connection
             ?? $mapping->connection
             ?? config('database.default');
-        $tableName = $mapping->table_name;
+        $baseTableName = $mapping->table_name;
 
         // Jika tabel tidak ada di koneksi terpilih tapi ada di legacy, pakai legacy
-        if (!Schema::connection($connection)->hasTable($tableName) && Schema::connection('sqlsrv_legacy')->hasTable($tableName)) {
+        if (!Schema::connection($connection)->hasTable($baseTableName) && Schema::connection('sqlsrv_legacy')->hasTable($baseTableName)) {
             $connection = 'sqlsrv_legacy';
+        }
+
+        /** @var UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(UploadIndexService::class);
+        $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
+        $tableName = $baseTableName;
+        if ($activeRun && $activeRun->period_date) {
+            $candidate = $this->buildStrictVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
+            if (Schema::connection($connection)->hasTable($candidate)) {
+                $tableName = $candidate;
+            }
         }
 
         if (!Schema::connection($connection)->hasTable($tableName)) {
@@ -292,6 +323,9 @@ class MappingController extends Controller
 
         // Build query
         $query = DB::connection($connection)->table($tableName)->select($selectColumns);
+        if (in_array('upload_index', $actualTableColumns, true) && $activeRun) {
+            $query->where('upload_index', $activeRun->upload_index);
+        }
         
         // Filter by division if not super-admin
         if (!$this->userHasRole($user, 'super-admin')) {
@@ -308,6 +342,7 @@ class MappingController extends Controller
             'columns' => $validColumns,
             'data' => $data,
             'columnMapping' => $columnMapping,
+            'period_date' => $activeRun->period_date ?? $periodFilter,
         ]);
     }
 
@@ -1274,6 +1309,171 @@ class MappingController extends Controller
     }
 
     /**
+     * Ensure upload_index column exists on the target table for versioned datasets (strict mode).
+     */
+    private function ensureUploadIndexColumn(string $tableName, string $connection): void
+    {
+        $schema = Schema::connection($connection);
+        if (! $schema->hasColumn($tableName, 'upload_index')) {
+            $schema->table($tableName, function (Blueprint $table) {
+                $table->integer('upload_index')->nullable()->index();
+            });
+            Log::info("Added upload_index column on {$tableName} (connection: {$connection}) for dataset versioning");
+        }
+    }
+
+    /**
+     * Update UploadRun progress/status if run id is provided.
+     */
+    private function updateUploadRunProgress(?int $uploadRunId, int $percent, ?string $status = null, ?string $message = null): void
+    {
+        if (! $uploadRunId) {
+            return;
+        }
+        try {
+            $payload = [
+                'progress_percent' => $percent,
+                'updated_at' => now(),
+            ];
+            if ($status) {
+                $payload['status'] = $status;
+            }
+            if ($message !== null) {
+                $payload['message'] = $message;
+            }
+            UploadRun::where('id', $uploadRunId)->update($payload);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to update upload run progress', [
+                'run_id' => $uploadRunId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Build strict versioned table name using period and upload index.
+     */
+    private function buildStrictVersionTableName(string $baseTable, string $periodDate, int $uploadIndex): string
+    {
+        $safePeriod = str_replace('-', '_', date('Y-m-d', strtotime($periodDate)));
+        return strtolower($baseTable . '__p' . $safePeriod . '__i' . $uploadIndex);
+    }
+
+    /**
+     * Ensure strict version table exists with the expected schema (id, mapped cols, period_date, upload_index, timestamps).
+     */
+    private function ensureStrictVersionTable(string $tableName, string $connection, $mappingRules, array $uniqueKeyColumns): void
+    {
+        $schema = Schema::connection($connection);
+        if ($schema->hasTable($tableName)) {
+            // Ensure required columns exist
+            if (! $schema->hasColumn($tableName, 'period_date')) {
+                $schema->table($tableName, function (Blueprint $table) {
+                    $table->date('period_date')->nullable()->index();
+                });
+            }
+            if (! $schema->hasColumn($tableName, 'upload_index')) {
+                $schema->table($tableName, function (Blueprint $table) {
+                    $table->integer('upload_index')->nullable()->index();
+                });
+            }
+            return;
+        }
+
+        $schema->create($tableName, function (Blueprint $table) use ($mappingRules, $uniqueKeyColumns) {
+            $table->bigIncrements('id');
+            foreach ($mappingRules as $rule) {
+                $columnName = $rule->table_column_name;
+                if (in_array($columnName, $uniqueKeyColumns, true)) {
+                    $table->string($columnName, 450)->nullable();
+                } else {
+                    $table->text($columnName)->nullable();
+                }
+            }
+            $table->date('period_date')->nullable()->index();
+            $table->boolean('is_active')->default(true)->index();
+            $table->integer('upload_index')->nullable()->index();
+            $table->timestamps();
+
+            if (!empty($uniqueKeyColumns)) {
+                $table->unique($uniqueKeyColumns, $table->getTable() . '_unique_key');
+            }
+        });
+    }
+
+    /**
+     * Drop old strict version tables for a specific period (keep newest $keepCount inactive versions).
+     */
+    private function cleanupOldStrictTables(int $mappingId, string $connection, string $periodDate, string $baseTable, int $keepCount = 1): void
+    {
+        $runs = DB::table('mapping_upload_runs')
+            ->where('mapping_index_id', $mappingId)
+            ->where('period_date', $periodDate)
+            ->where('status', 'inactive')
+            ->orderByDesc('upload_index')
+            ->skip($keepCount)
+            ->take(50)
+            ->get();
+
+        foreach ($runs as $run) {
+            $table = $this->buildStrictVersionTableName($baseTable, $periodDate, (int) $run->upload_index);
+            if (Schema::connection($connection)->hasTable($table)) {
+                Schema::connection($connection)->drop($table);
+                Log::info("Dropped old strict version table {$table} (mapping {$mappingId}, period {$periodDate})");
+            }
+        }
+    }
+
+    public function queueUpload(Request $request): JsonResponse
+    {
+        $rawPeriod = $request->input('period_date');
+        if ($rawPeriod === '' || $rawPeriod === null) {
+            $request->merge(['period_date' => null]);
+        }
+
+        $validated = $request->validate([
+            'data_file' => ['required', File::types(['xlsx', 'xls'])],
+            'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
+            'selected_columns' => ['nullable', 'string'],
+            'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
+            'sheet_name' => ['nullable', 'string'],
+            'period_date' => ['nullable', 'required_if:upload_mode,strict', 'date_format:Y-m-d'],
+        ]);
+
+        $uploadedFile = $request->file('data_file');
+        Storage::disk('local')->makeDirectory('tmp');
+        $storedName = 'upload_' . Str::random(16) . '.xlsx';
+        $storedRelativePath = $uploadedFile->storeAs('tmp', $storedName, 'local');
+        if (! $storedRelativePath) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan file upload.',
+            ], 500);
+        }
+        $storedXlsxPath = Storage::disk('local')->path($storedRelativePath);
+
+        $run = UploadRun::create([
+            'mapping_index_id' => $validated['mapping_id'],
+            'user_id' => Auth::id(),
+            'file_name' => $uploadedFile->getClientOriginalName(),
+            'stored_xlsx_path' => $storedXlsxPath,
+            'sheet_name' => $validated['sheet_name'] ?? null,
+            'upload_mode' => $validated['upload_mode'],
+            'period_date' => $validated['period_date'] ?? null,
+            'selected_columns' => $validated['selected_columns'] ?? null,
+            'status' => 'pending',
+            'progress_percent' => 0,
+        ]);
+
+        ProcessUploadJob::dispatch($run->id);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Upload sedang diantrikan. Pantau progres di kartu \"Recent Uploads\".',
+        ], 202);
+    }
+
+    /**
      * Upload data - Process actual upload with STAGING TABLE pattern
      */
     public function uploadData(Request $request): JsonResponse
@@ -1290,22 +1490,36 @@ class MappingController extends Controller
         $rowsSinceLog = 0;
         $convertedCsvPath = null;
         $storedXlsxPath = null;
+        /** @var UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(UploadIndexService::class);
+        $uploadRun = null;
+        $uploadIndexValue = null;
+        $useUploadIndex = false;
         
         try {
+            if ($request->filled('run_id')) {
+                $uploadRun = UploadRun::find($request->input('run_id'));
+            }
             // Allow PHP to notice when client disconnects so we can stop early
             @ignore_user_abort(false);
             @set_time_limit(0);
             @ini_set('max_execution_time', '0');
+            $rawPeriod = $request->input('period_date');
+            if ($rawPeriod === '' || $rawPeriod === null) {
+                $request->merge(['period_date' => null]);
+            }
+
             $validated = $request->validate([
                 'data_file' => ['required', File::types(['xlsx', 'xls'])],
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
                 'selected_columns' => ['nullable', 'string'],
                 'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
                 'sheet_name' => ['nullable', 'string'],
+                'period_date' => ['nullable', 'required_if:upload_mode,strict', 'date_format:Y-m-d'],
             ]);
             
-            // Automatically use today's date as period_date
-            $periodDate = now()->toDateString();
+            // Use provided period_date (strict) or today's date
+            $periodDate = $validated['period_date'] ?? now()->toDateString();
             // Use ISO 8601 (T separator) for datetime to keep SQL Server bulk insert happy
             $nowString = now()->format('Y-m-d\\TH:i:s.v');
             // Remove delimiter/newlines that could break bulk parsing
@@ -1339,10 +1553,9 @@ class MappingController extends Controller
                 $connection = 'sqlsrv_legacy';
             }
 
-            // Pakai koneksi terpilih untuk semua operasi berikutnya
             DB::setDefaultConnection($connection);
             $schema = Schema::connection($connection);
-            $hasPeriodDate = $schema->hasColumn($mainTableName, 'period_date');
+            $hasPeriodDate = $useUploadIndex ? true : $schema->hasColumn($mainTableName, 'period_date');
             
             Log::info('Mapping info:', [
                 'id' => $mapping->id,
@@ -1398,20 +1611,41 @@ class MappingController extends Controller
 
             // If upsert mode but no unique keys, choose fallback:
             // - For legacy: append (no delete, just insert)
-            // - For others: strict (replace)
+            // - For others: append as well (avoid accidental replace)
             if ($uploadMode === 'upsert' && empty($uniqueKeyColumns)) {
-                if ($isLegacyConnection) {
-                    Log::warning('Upsert mode selected but no unique keys defined. Switching to append mode for legacy.');
-                    $uploadMode = 'append';
-                } else {
-                    Log::warning('Upsert mode selected but no unique keys defined. Switching to strict mode.');
-                    $uploadMode = 'strict';
+                Log::warning('Upsert mode selected but no unique keys defined. Switching to append mode to avoid data replacement.', [
+                    'mapping_id' => $mapping->id,
+                    'table' => $mainTableName,
+                    'connection' => $connection,
+                ]);
+                $uploadMode = 'append';
+            }
+            $useUploadIndex = ($uploadMode === 'strict');
+
+            if ($useUploadIndex) {
+                if (empty($validated['period_date'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Period date wajib diisi untuk mode strict.'
+                    ], 422);
                 }
+
+                $this->ensureUploadIndexColumn($mainTableName, $connection);
+                $uploadRun = $uploadIndexService->beginRun($mapping->id, Auth::id(), $periodDate);
+                $uploadIndexValue = (int) $uploadRun->upload_index;
             }
 
             // Create mapping array: excel_column_index => table_column_name
             $columnMapping = $mappingRules->pluck('table_column_name', 'excel_column_index')->toArray();
             Log::info('Column mapping:', $columnMapping);
+
+            $targetTableName = $mainTableName;
+            $versionTableName = null;
+            if ($useUploadIndex) {
+                $versionTableName = $this->buildStrictVersionTableName($mainTableName, $periodDate, $uploadIndexValue);
+                $this->ensureStrictVersionTable($versionTableName, $connection, $mappingRules, $uniqueKeyColumns);
+                $targetTableName = $versionTableName;
+            }
 
             // Determine sheet (use provided or first)
             $sheetName = $validated['sheet_name'] ?? ($this->listWorksheetNames($request->file('data_file'))[0] ?? 'Sheet1');
@@ -1447,6 +1681,7 @@ class MappingController extends Controller
             $stagingColumns = array_merge(
                 $orderedColumns,
                 $hasPeriodDate ? ['period_date'] : [],
+                $useUploadIndex ? ['upload_index'] : [],
                 ['created_at', 'updated_at']
             );
             $columnIndexes = [];
@@ -1465,9 +1700,10 @@ class MappingController extends Controller
             // Step 1: Create staging table with unique random name
             $stagingTableName = 'staging_' . $mainTableName . '_' . Str::random(8);
             Log::info("Step 1: Creating staging table: {$stagingTableName}");
+            $this->updateUploadRunProgress($uploadRun?->id, 10);
             
-            // Create staging table with identical structure INCLUDING unique constraint
-            Schema::connection($connection)->create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns, $driver, $uploadMode, $hasPeriodDate) {
+            // Create staging table with identical structure (no unique constraint to allow dedup after bulk insert)
+            Schema::connection($connection)->create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns, $driver, $uploadMode, $hasPeriodDate, $useUploadIndex) {
                 // Add all mapped columns as text/nullable (same as main table)
                 foreach ($columnMapping as $dbColumn) {
                     if (in_array($dbColumn, $uniqueKeyColumns, true)) {
@@ -1480,15 +1716,12 @@ class MappingController extends Controller
                 if ($hasPeriodDate) {
                     $table->date('period_date')->nullable();
                 }
+                if ($useUploadIndex) {
+                    $table->integer('upload_index')->nullable()->index();
+                }
                 // Keep timestamps as strings to avoid bulk insert conversion issues
                 $table->string('created_at', 30)->nullable();
                 $table->string('updated_at', 30)->nullable();
-                
-                // Add unique constraint if there are unique key columns for UPSERT mode
-                if (!empty($uniqueKeyColumns) && !($driver === 'sqlsrv' && $uploadMode === 'upsert')) {
-                    $table->unique($uniqueKeyColumns, 'staging_unique_key_' . Str::random(6));
-                    Log::info("Staging table unique constraint created on: " . implode(', ', $uniqueKeyColumns));
-                }
             });
             
             Log::info("Staging table '{$stagingTableName}' created successfully");
@@ -1546,6 +1779,7 @@ class MappingController extends Controller
                 'sheet' => $sheetName,
                 'seconds' => $convertDuration,
             ]);
+            $this->updateUploadRunProgress($uploadRun?->id, 25);
             $streamStart = microtime(true);
 
             $csvInput = fopen($convertedCsvPath, 'r');
@@ -1619,6 +1853,9 @@ class MappingController extends Controller
                 if ($hasPeriodDate) {
                     $rowValues[] = $periodDate;
                 }
+                if ($useUploadIndex) {
+                    $rowValues[] = $uploadIndexValue;
+                }
                 $rowValues[] = $nowStringSanitized;
                 $rowValues[] = $nowStringSanitized;
 
@@ -1670,6 +1907,9 @@ class MappingController extends Controller
                 if ($storedXlsxPath && file_exists($storedXlsxPath)) {
                     @unlink($storedXlsxPath);
                 }
+                if ($uploadRun && $useUploadIndex) {
+                    $uploadIndexService->failRun($uploadRun, 'Upload dibatalkan oleh pengguna');
+                }
                 Schema::dropIfExists($stagingTableName);
                 if ($cancelKey) {
                     Cache::forget($cancelKey);
@@ -1685,6 +1925,9 @@ class MappingController extends Controller
                     @unlink($csvPath);
                 }
                 Schema::dropIfExists($stagingTableName);
+                if ($uploadRun && $useUploadIndex) {
+                    $uploadIndexService->failRun($uploadRun, 'Tidak ada data valid di file.');
+                }
                 return response()->json([
                     'success' => false,
                     'message' => 'Tidak ada data valid yang dapat diimpor dari file.'
@@ -1695,7 +1938,7 @@ class MappingController extends Controller
             if ($useBulkInsert && $csvPath) {
                 $pathForSql = str_replace('\\', '\\\\', $csvPath);
                 $pathForSql = str_replace("'", "''", $pathForSql);
-                // Use BULK INSERT without column list; staging table is built to match CSV column order
+                // Use BULK INSERT without column list (table has no identity column)
                 $bulkSql = "BULK INSERT [{$stagingTableName}]
                             FROM '{$pathForSql}'
                             WITH (
@@ -1710,9 +1953,30 @@ class MappingController extends Controller
                 DB::statement($bulkSql);
                 @unlink($csvPath);
                 Log::info("BULK INSERT completed for {$stagingTableName} (rows: {$totalRows})");
+                $this->updateUploadRunProgress($uploadRun?->id, 55);
             }
 
             Log::info('Total rows to process: ' . $totalRows . " | chunks: {$chunksInserted} | chunkSize: {$chunkSize}");
+            
+            // Deduplicate staging rows on unique keys (keep first) to avoid duplicate key errors during sync
+            if (!empty($uniqueKeyColumns) && $driver === 'sqlsrv') {
+                // Add surrogate row id for dedup
+                DB::statement("ALTER TABLE [{$stagingTableName}] ADD __row_id BIGINT IDENTITY(1,1);");
+
+                $partition = implode(', ', array_map(fn($col) => "[{$col}]", $uniqueKeyColumns));
+                $notNullFilter = implode(' AND ', array_map(fn($col) => "[{$col}] IS NOT NULL", $uniqueKeyColumns));
+                $dedupSql = "
+                    WITH cte AS (
+                        SELECT __row_id, ROW_NUMBER() OVER (PARTITION BY {$partition} ORDER BY __row_id) AS rn
+                        FROM [{$stagingTableName}]
+                        WHERE {$notNullFilter}
+                    )
+                    DELETE FROM cte WHERE rn > 1;
+                ";
+                $removed = DB::affectingStatement($dedupSql);
+                Log::info("Staging dedup applied on unique keys (" . implode(', ', $uniqueKeyColumns) . "), rows removed: {$removed}");
+                $this->updateUploadRunProgress($uploadRun?->id, 65);
+            }
             
             // Step 3: Atomic transaction to sync from staging to main table
             Log::info("Step 3: Starting atomic transaction to sync data");
@@ -1723,18 +1987,19 @@ class MappingController extends Controller
             try {
                 if ($uploadMode === 'append') {
                     // APPEND MODE: Insert all staging rows as-is (with safe conversions)
-                    Log::info("APPEND MODE: Inserting data without deletion for table '{$mainTableName}'");
+                    Log::info("APPEND MODE: Inserting data without deletion for table '{$targetTableName}'");
 
                     $columns = array_merge(
                         array_values($columnMapping),
                         $hasPeriodDate ? ['period_date'] : [],
+                        $useUploadIndex ? ['upload_index'] : [],
                         ['created_at', 'updated_at']
                     );
 
                     $columnTypes = [];
                     foreach ($columns as $col) {
                         try {
-                            $columnTypes[$col] = $schema->getColumnType($mainTableName, $col);
+                            $columnTypes[$col] = $schema->getColumnType($targetTableName, $col);
                         } catch (\Exception $e) {
                             $columnTypes[$col] = 'string';
                         }
@@ -1756,45 +2021,37 @@ class MappingController extends Controller
                         $selects[] = DB::raw("{$expr} as [{$col}]");
                     }
 
-                    DB::table($mainTableName)->insertUsing(
+                    DB::table($targetTableName)->insertUsing(
                         $columns,
                         DB::table($stagingTableName)->select($selects)
                     );
 
-                    $message = $totalRows . " baris data berhasil ditambahkan ke tabel '{$mainTableName}' (Mode Append).";
+                    $message = $totalRows . " baris data berhasil ditambahkan ke tabel '{$targetTableName}' (Mode Append).";
 
                 } elseif ($uploadMode === 'strict') {
-                    // STRICT MODE: Delete data with same period_date, then insert all from staging
-                    Log::info("STRICT MODE: Deleting data with period_date = '{$periodDate}' from main table '{$mainTableName}'");
-                    
+                    if ($useUploadIndex && $uploadIndexValue === null) {
+                        throw new \RuntimeException('upload_index run belum diinisialisasi.');
+                    }
+                    // STRICT MODE (versioned): keep previous versions, insert new dataset with upload_index
+                    Log::info("STRICT MODE (versioned): inserting dataset upload_index {$uploadIndexValue} for table '{$targetTableName}'");
+
                     $columns = array_merge(
                         array_values($columnMapping),
                         $hasPeriodDate ? ['period_date'] : [],
+                        ['upload_index'],
                         ['created_at', 'updated_at']
                     );
-                    
-                    // Remove existing rows for the same period and replace with staging data
-                    if ($hasPeriodDate) {
-                        DB::table($mainTableName)
-                            ->whereDate('period_date', $periodDate)
-                            ->delete();
-                    } else {
-                        // Tidak ada period_date: hapus seluruh tabel (strict = replace all)
-                        DB::table($mainTableName)->delete();
-                    }
 
-                    // If table becomes empty, reset identity so IDs start from 1 on next insert
-                    $remainingRows = DB::table($mainTableName)->count();
-                    if ($remainingRows === 0) {
-                        $this->resetIdentity($mainTableName);
-                        Log::info("STRICT MODE: Identity reset because table '{$mainTableName}' kosong setelah delete");
-                    }
+                    // Ensure we don't duplicate the same upload_index if a retry happens
+                    DB::table($targetTableName)
+                        ->where('upload_index', $uploadIndexValue)
+                        ->delete();
 
                     // Build safe select with TRY_CONVERT for numeric/date columns to avoid type errors on legacy DB
                     $columnTypes = [];
                     foreach ($columns as $col) {
                         try {
-                            $columnTypes[$col] = $schema->getColumnType($mainTableName, $col);
+                            $columnTypes[$col] = $schema->getColumnType($targetTableName, $col);
                         } catch (\Exception $e) {
                             $columnTypes[$col] = 'string';
                         }
@@ -1816,13 +2073,15 @@ class MappingController extends Controller
                         $selects[] = DB::raw("{$expr} as [{$col}]");
                     }
 
-                    DB::table($mainTableName)->insertUsing(
+                    DB::table($targetTableName)->insertUsing(
                         $columns,
                         DB::table($stagingTableName)->select($selects)
                     );
                     
-                    Log::info("STRICT MODE: Successfully replaced data for period {$periodDate}");
-                    $message = $totalRows . " baris data berhasil diimpor ke tabel '{$mainTableName}' (Mode Strict: Data period {$periodDate} di-replace).";
+                    Log::info("STRICT MODE: Successfully inserted versioned dataset (upload_index {$uploadIndexValue})");
+                    $message = $totalRows . " baris data berhasil diimpor (Strict, upload_index {$uploadIndexValue}).";
+                    
+                    $this->updateUploadRunProgress($uploadRun?->id, 85);
                     
                 } else {
                     // UPSERT MODE
@@ -1884,6 +2143,13 @@ class MappingController extends Controller
                 // Commit transaction
                 DB::commit();
                 Log::info("=== TRANSAKSI BERHASIL DI-COMMIT ===");
+                
+                if ($uploadRun && $useUploadIndex) {
+                    $uploadIndexService->activateRun($uploadRun);
+                    CleanupStrictVersions::dispatch($mapping->id, $periodDate, $mainTableName, $connection)
+                        ->delay(now()->addDay());
+                }
+                $this->updateUploadRunProgress($uploadRun?->id, 95);
                 
             } catch (\Exception $e) {
                 DB::rollBack();
@@ -1947,9 +2213,14 @@ class MappingController extends Controller
             Log::error('Stack trace: ' . $e->getTraceAsString());
             Log::error('File: ' . $e->getFile());
             Log::error('Line: ' . $e->getLine());
+
+            if ($uploadRun && $useUploadIndex) {
+                $uploadIndexService->failRun($uploadRun, $e->getMessage());
+            }
             
             // Cleanup: Drop staging table if it exists
-            $this->dropStagingTable($stagingTableName, $connection, true);
+            $safeConnection = $connection ?? config('database.default');
+            $this->dropStagingTable($stagingTableName, $safeConnection, true);
 
             if ($csvPath && file_exists($csvPath)) {
                 @unlink($csvPath);
