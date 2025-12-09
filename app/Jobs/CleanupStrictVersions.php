@@ -19,14 +19,14 @@ class CleanupStrictVersions implements ShouldQueue
     private int $mappingId;
     private string $periodDate;
     private string $baseTable;
-    private string $connection;
+    private string $dbConnection;
 
     public function __construct(int $mappingId, string $periodDate, string $baseTable, string $connection)
     {
         $this->mappingId = $mappingId;
         $this->periodDate = $periodDate;
         $this->baseTable = $baseTable;
-        $this->connection = $connection;
+        $this->dbConnection = $connection;
     }
 
     public function handle(UploadIndexService $uploadIndexService): void
@@ -56,8 +56,8 @@ class CleanupStrictVersions implements ShouldQueue
         foreach ($runsToDrop as $run) {
             $table = $uploadIndexService->buildVersionTableName($this->baseTable, $this->periodDate, (int) $run->upload_index);
             try {
-                if (Schema::connection($this->connection)->hasTable($table)) {
-                    Schema::connection($this->connection)->drop($table);
+                if (Schema::connection($this->dbConnection)->hasTable($table)) {
+                    Schema::connection($this->dbConnection)->drop($table);
                     Log::info('Strict version dropped', [
                         'mapping_id' => $this->mappingId,
                         'period_date' => $this->periodDate,
