@@ -528,7 +528,7 @@ class MappingController extends Controller
         $html .= '<span class="font-semibold text-gray-900">Strict (Replace by Period)</span>';
         $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Hati-hati</span>';
         $html .= '</div>';
-        $html .= '<p class="text-sm text-gray-600 mt-1">Sistem akan <strong>otomatis mendeteksi tanggal</strong> dari file Excel, menghapus data lama pada bulan tersebut, lalu memasukkan data baru.</p>';
+        $html .= '<p class="text-sm text-gray-600 mt-1">Sistem akan <strong>otomatis mendeteksi tanggal</strong> dari file Excel (berdasarkan mapping), menghapus data lama pada bulan tersebut, lalu memasukkan data baru.</p>';
         $html .= '<p class="text-xs text-red-600 mt-1 font-medium">⚠️ Pastikan kolom tanggal di Excel sudah dimapping ke \'period_date\'!</p>';
         $html .= '</div>';
         $html .= '</label>';
@@ -1217,75 +1217,32 @@ class MappingController extends Controller
      */
     private function convertExcelDate($value)
     {
-        // If value is null or empty, return as is
         if ($value === null || $value === '') {
             return $value;
         }
 
-        // If value is already in YYYY-MM-DD format, return as is
+        // 1. Check if already in Database Format (Y-m-d)
         if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
             return $value;
         }
 
-        // Try to parse string dates in DD/MM/YYYY or DD-MM-YYYY format
-        if (is_string($value)) {
-            // Match DD/MM/YYYY or D/M/YYYY (e.g., 26/12/2025, 6/5/2020)
-            if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $value, $matches)) {
-                try {
-                    $day = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
-                    $month = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
-                    $year = $matches[3];
-                    
-                    // Validate date
-                    if (checkdate($month, $day, $year)) {
-                        return "{$year}-{$month}-{$day}";
-                    }
-                } catch (\Exception $e) {
-                    Log::warning("Failed to parse date string: {$value}");
-                }
-            }
-            
-            // Match DD-MM-YYYY or D-M-YYYY (e.g., 26-12-2025, 6-5-2020)
-            if (preg_match('/^(\d{1,2})-(\d{1,2})-(\d{4})$/', $value, $matches)) {
-                try {
-                    $day = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
-                    $month = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
-                    $year = $matches[3];
-                    
-                    // Validate date
-                    if (checkdate($month, $day, $year)) {
-                        return "{$year}-{$month}-{$day}";
-                    }
-                } catch (\Exception $e) {
-                    Log::warning("Failed to parse date string: {$value}");
-                }
-            }
-        }
-
-        // Check if value is a numeric Excel date serial number
-        // Excel dates start from 1 (1900-01-01) but we use 18264 (1950) as minimum
-        // to avoid converting small IDs (1-18263) to dates
-        // Range: 18264 (1950-01-01) to 60000 (2064-03-01)
-        // This covers birth dates from 1950 onwards and business dates
+        // 2. Check Numeric (Excel Serial Date)
         if (is_numeric($value) && $value >= 18264 && $value <= 60000) {
             try {
-                // Excel's epoch starts at 1900-01-01, but has a leap year bug
-                // Days are counted from December 30, 1899
                 $unixTimestamp = ($value - 25569) * 86400;
-                
-                // Convert to Carbon/DateTime
-                $date = \Carbon\Carbon::createFromTimestamp($unixTimestamp);
-                
-                // Return in YYYY-MM-DD format
-                return $date->format('Y-m-d');
+                return \Carbon\Carbon::createFromTimestamp($unixTimestamp)->format('Y-m-d');
             } catch (\Exception $e) {
-                Log::warning("Failed to convert Excel date: {$value}, Error: " . $e->getMessage());
-                return $value;
+                // Continue to fallback
             }
         }
 
-        // Return value as is if not a date
-        return $value;
+        // 3. Fallback: Carbon Parse (Human Readable like '03-Mar-2025')
+        try {
+            return \Carbon\Carbon::parse($value)->format('Y-m-d');
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to parse date string: {$value}");
+            return $value; // Return original if failed
+        }
     }
 
     /**
