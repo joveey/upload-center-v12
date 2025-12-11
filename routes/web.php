@@ -45,6 +45,10 @@ Route::middleware('auth')->group(function () {
         Route::post('/upload/process', [MappingController::class, 'queueUpload'])
             ->name('upload.process');
 
+        // Strict mode upload (delete & replace by period)
+        Route::post('/upload/strict', [MappingController::class, 'uploadDataStrict'])
+            ->name('upload.strict');
+
         // Cancel upload (sets cancel flag)
         Route::post('/upload/cancel', [MappingController::class, 'cancelUpload'])
             ->name('upload.cancel');

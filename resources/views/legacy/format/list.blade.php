@@ -4,7 +4,7 @@
             <div>
                 <h2 class="font-bold text-2xl text-gray-900 leading-tight">Legacy Data Mappings</h2>
                 <p class="mt-1 text-sm text-gray-600">
-                    Semua tabel di koneksi legacy terlihat di sini; pilih yang sudah dimapping atau mapping-kan tabel baru.
+                    Menampilkan hanya tabel legacy yang belum diregister; langsung mapping-kan tabel baru dari sini.
                 </p>
                 @if(!empty($search ?? ''))
                     <p class="mt-1 text-xs text-[#0057b7] font-semibold">Filter: "{{ $search }}"</p>
@@ -39,12 +39,12 @@
                                 </svg>
                             </div>
                             <div>
-                                <p class="text-sm text-[#d8e7f7]">Legacy / All tables</p>
+                                <p class="text-sm text-[#d8e7f7]">Legacy / Unregistered tables</p>
                                 <h3 class="text-xl font-semibold">Daftar Tabel Legacy</h3>
                             </div>
                         </div>
                         <div class="text-sm text-[#d8e7f7]">
-                            Tabel terlihat meski belum dimapping.
+                            Tabel yang sudah diregister disembunyikan.
                         </div>
                     </div>
                 </div>
@@ -89,7 +89,7 @@
                                                         @csrf
                                                         <input type="hidden" name="table_name" value="{{ $mapping->table_name }}">
                                                         <button type="submit" class="inline-flex items-center px-3 py-1.5 bg-white border border-[#cbd5e1] hover:border-[#0057b7] hover:text-[#0057b7] text-gray-700 rounded-lg text-xs font-semibold shadow-sm transition-colors duration-150">
-                                                            Mapping-kan
+                                                            Register Table
                                                         </button>
                                                     </form>
                                                 @else
@@ -101,7 +101,7 @@
                                 @empty
                                     <tr>
                                         <td colspan="4" class="px-4 py-6 text-center text-sm text-gray-600">
-                                            Belum ada tabel legacy yang terdeteksi.
+                                            Semua tabel legacy sudah diregister atau tidak ditemukan.
                                         </td>
                                     </tr>
                                 @endforelse

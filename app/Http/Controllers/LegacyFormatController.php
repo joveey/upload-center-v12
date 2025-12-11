@@ -52,6 +52,11 @@ class LegacyFormatController extends Controller
             ];
         });
 
+        // Sembunyikan tabel yang sudah dimapping agar daftar hanya berisi tabel legacy yang belum ter-register.
+        $collection = $collection->filter(function ($item) {
+            return ! $item->is_mapped;
+        })->values();
+
         if ($search !== '') {
             $needle = strtolower($search);
             $collection = $collection->filter(function ($item) use ($needle) {
