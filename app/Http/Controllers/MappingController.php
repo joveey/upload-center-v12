@@ -2228,154 +2228,149 @@ class MappingController extends Controller
     }
 
     /**
-     * Strict mode upload: delete rows for the given period, then insert the new rows as-is.
+     * Strict mode upload with auto-detected period and versioned tables for zero downtime.
      */
     public function uploadDataStrict(Request $request): JsonResponse
     {
+        // Explicitly resolve the service
+        /** @var \App\Services\UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(\App\Services\UploadIndexService::class);
+
+        // 1. Validate Input (No manual period_date needed)
         $validated = $request->validate([
             'data_file' => ['required', File::types(['xlsx', 'xls', 'csv'])],
             'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
-            'period_date' => ['required', 'date_format:Y-m-d'],
             'sheet_name' => ['nullable', 'string'],
         ]);
 
         $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
-        if (! $mapping) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Format tidak ditemukan.',
-            ], 404);
+        if (!$mapping) {
+            return response()->json(['success' => false, 'message' => 'Format tidak ditemukan.'], 404);
         }
 
-        $tableName = $mapping->table_name;
-        $connection = $mapping->target_connection
-            ?? $mapping->connection
+        // 2. Resolve Connection (Auto fallback to legacy)
+        $connection = $mapping->target_connection 
+            ?? $mapping->connection 
             ?? config('database.default');
+        
+        $baseTableName = $mapping->table_name;
 
-        $schema = Schema::connection($connection);
-        if (! $schema->hasTable($tableName) && Schema::connection('sqlsrv_legacy')->hasTable($tableName)) {
+        if (!Schema::connection($connection)->hasTable($baseTableName) && Schema::connection('sqlsrv_legacy')->hasTable($baseTableName)) {
             $connection = 'sqlsrv_legacy';
-            $schema = Schema::connection($connection);
         }
 
-        if (! $schema->hasTable($tableName)) {
-            return response()->json([
-                'success' => false,
-                'message' => "Tabel '{$tableName}' tidak ditemukan.",
-            ], 404);
+        // 3. Find Mapping for 'period_date' (with legacy alias fallback)
+        $periodColumnRule = $mapping->columns->firstWhere('table_column_name', 'period_date');
+        if (!$periodColumnRule) {
+            $periodColumnRule = $mapping->columns->first(function ($col) {
+                $name = strtolower($col->table_column_name);
+                return in_array($name, ['period', 'periode', 'period_dt', 'perioddate'], true);
+            });
         }
-
-        if (! $schema->hasColumn($tableName, 'period_date')) {
-            return response()->json([
-                'success' => false,
-                'message' => "Tabel '{$tableName}' tidak memiliki kolom period_date.",
-            ], 422);
+        if (!$periodColumnRule) {
+            return response()->json(['success' => false, 'message' => 'Format ini belum memiliki mapping untuk kolom period_date.'], 422);
         }
+        $periodExcelColIndex = $this->columnLetterToIndex($periodColumnRule->excel_column_index);
 
-        $columnMapping = $mapping->columns
-            ->sortBy(fn ($col) => $this->columnLetterToIndex($col->excel_column_index))
-            ->pluck('table_column_name', 'excel_column_index')
-            ->toArray();
-
-        if (empty($columnMapping)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Tidak ada kolom yang di-mapping untuk format ini.',
-            ], 422);
-        }
-
+        // 4. PEEK: Read File to Detect Period
         $file = $request->file('data_file');
-        $periodDate = $validated['period_date'];
-        $headerRow = max(1, (int) ($mapping->header_row ?? 1));
-        $dataStartRow = $headerRow + 1;
+        $reader = IOFactory::createReaderForFile($file->getPathname());
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($file->getPathname());
+        
         $sheetName = $validated['sheet_name'] ?? null;
-        $rowsToInsert = [];
-        $batchSize = 1000;
-        $insertedCount = 0;
-        $tableColumns = $schema->getColumnListing($tableName);
-        $hasCreatedAt = in_array('created_at', $tableColumns, true);
-        $hasUpdatedAt = in_array('updated_at', $tableColumns, true);
-        $timestamp = now()->toDateTimeString();
+        $sheet = $sheetName ? $spreadsheet->getSheetByName($sheetName) : $spreadsheet->getActiveSheet();
+        if (!$sheet) throw new \RuntimeException("Sheet tidak ditemukan.");
+
+        $headerRow = max(1, (int) $mapping->header_row);
+        $dataStartRow = $headerRow + 1;
+
+        // Read first data row to get the date
+        $firstDataRow = $sheet->rangeToArray("A{$dataStartRow}:AZ{$dataStartRow}", null, true, true, false);
+        
+        if (empty($firstDataRow)) {
+            return response()->json(['success' => false, 'message' => 'File kosong.'], 422);
+        }
+
+        $rawPeriodValue = $firstDataRow[0][$periodExcelColIndex] ?? null;
+        $periodDate = $this->convertExcelDate($rawPeriodValue);
+
+        if (!$periodDate) {
+            return response()->json(['success' => false, 'message' => "Gagal mendeteksi tanggal valid di kolom {$periodColumnRule->excel_column_index} (Value: {$rawPeriodValue})."], 422);
+        }
+
+        Log::info("Strict Mode: Detected Period {$periodDate} from file.");
+
+        // 5. VERSIONING: Start New Run & Create Temp Table
+        $run = $uploadIndexService->beginRun($mapping->id, Auth::id(), $periodDate);
+        $uploadIndex = (int) $run->upload_index;
+        $targetTableName = $this->buildStrictVersionTableName($baseTableName, $periodDate, $uploadIndex);
 
         $connectionInstance = DB::connection($connection);
         $connectionInstance->beginTransaction();
 
         try {
-            $deletedCount = $connectionInstance->table($tableName)
-                ->where('period_date', $periodDate)
-                ->delete();
+            // Create Version Table
+            $uniqueKeyColumns = $mapping->columns->where('is_unique_key', true)->pluck('table_column_name')->toArray();
+            $this->ensureStrictVersionTable($targetTableName, $connection, $mapping->columns, $uniqueKeyColumns);
 
-            $reader = IOFactory::createReaderForFile($file->getPathname());
-            $reader->setReadDataOnly(true);
-            $spreadsheet = $reader->load($file->getPathname());
-
-            if ($sheetName) {
-                $sheet = $spreadsheet->getSheetByName($sheetName);
-                if (! $sheet) {
-                    throw new \RuntimeException("Sheet '{$sheetName}' tidak ditemukan.");
-                }
-            } else {
-                $sheet = $spreadsheet->getActiveSheet();
-            }
-
+            // 6. INSERT DATA
+            $columnMapping = $mapping->columns->pluck('table_column_name', 'excel_column_index')->toArray();
+            $rowsToInsert = [];
+            $batchSize = 1000;
             $rows = $sheet->toArray(null, true, true, true);
+            $timestamp = now()->toDateTimeString();
+
             foreach ($rows as $rowIndex => $rowValues) {
-                if ($rowIndex < $dataStartRow) {
-                    continue;
-                }
+                if ($rowIndex < $dataStartRow) continue;
 
                 $record = [];
                 $hasValue = false;
-                foreach ($columnMapping as $excelColumn => $dbColumn) {
-                    $value = $rowValues[$excelColumn] ?? null;
-                    if ($value !== null && $value !== '') {
-                        $hasValue = true;
+                foreach ($columnMapping as $excelCol => $dbCol) {
+                    $val = $rowValues[$excelCol] ?? null;
+                    if ($val !== null && $val !== '') $hasValue = true;
+
+                    if (in_array($dbCol, ['period_date', 'period', 'periode', 'period_dt', 'perioddate'], true)) {
+                        $val = $this->convertExcelDate($val);
                     }
-                    $record[$dbColumn] = $value;
+                    $record[$dbCol] = $val;
                 }
 
-                if (! $hasValue) {
-                    continue;
-                }
+                if (!$hasValue) continue;
 
                 $record['period_date'] = $periodDate;
-                if ($hasCreatedAt) {
-                    $record['created_at'] = $timestamp;
-                }
-                if ($hasUpdatedAt) {
-                    $record['updated_at'] = $timestamp;
-                }
+                $record['upload_index'] = $uploadIndex;
+                $record['is_active'] = 1;
+                $record['created_at'] = $timestamp;
+                $record['updated_at'] = $timestamp;
 
                 $rowsToInsert[] = $record;
             }
 
             foreach (array_chunk($rowsToInsert, $batchSize) as $chunk) {
-                if (empty($chunk)) {
-                    continue;
-                }
-                $connectionInstance->table($tableName)->insert($chunk);
-                $insertedCount += count($chunk);
+                $connectionInstance->table($targetTableName)->insert($chunk);
             }
 
             $connectionInstance->commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => "Data periode {$periodDate} berhasil diganti (hapus {$deletedCount} baris, insert {$insertedCount} baris).",
-            ]);
-        } catch (\Throwable $e) {
-            $connectionInstance->rollBack();
-            Log::error('Strict upload gagal: ' . $e->getMessage(), [
-                'mapping_id' => $mapping->id,
-                'table' => $tableName,
-                'connection' => $connection,
-                'period_date' => $periodDate,
-            ]);
+            // 7. ACTIVATE (Zero Downtime Switch)
+            $uploadIndexService->activateRun($run);
+
+            // Cleanup old versions later
+            CleanupStrictVersions::dispatch($mapping->id, $periodDate, $baseTableName, $connection)
+                ->delay(now()->addMinutes(5));
 
             return response()->json([
-                'success' => false,
-                'message' => 'Gagal upload strict: ' . $e->getMessage(),
-            ], 500);
+                'success' => true,
+                'message' => "Upload Berhasil! Data periode {$periodDate} telah diperbarui (Versi: {$uploadIndex}).",
+            ]);
+
+        } catch (\Throwable $e) {
+            $connectionInstance->rollBack();
+            $uploadIndexService->failRun($run, $e->getMessage());
+            Schema::connection($connection)->dropIfExists($targetTableName);
+            Log::error("Strict Upload Error: " . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Gagal: ' . $e->getMessage()], 500);
         }
     }
 }

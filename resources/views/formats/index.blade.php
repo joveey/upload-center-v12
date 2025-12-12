@@ -378,4 +378,63 @@
             });
         });
     });
+
+    // Handle Upload Confirmation (Dynamic Routing)
+    document.body.addEventListener('click', function(e) {
+        if (e.target && (e.target.id === 'btn-confirm-upload' || e.target.closest('#btn-confirm-upload'))) {
+            const btn = e.target.id === 'btn-confirm-upload' ? e.target : e.target.closest('#btn-confirm-upload');
+            const form = document.getElementById('uploadForm') || document.querySelector('form[action*="upload"]');
+            
+            if (!form) return;
+
+            // Find selected mode
+            const modeInput = document.querySelector('input[name="upload_mode"]:checked');
+            if (!modeInput) {
+                alert('Silakan pilih mode upload terlebih dahulu.');
+                return;
+            }
+
+            e.preventDefault();
+            const uploadMode = modeInput.value;
+            
+            // ROUTING LOGIC: Strict -> /upload/strict, Others -> /upload/process
+            let targetUrl = '{{ route("upload.process") }}';
+            if (uploadMode === 'strict') {
+                targetUrl = '{{ route("upload.strict") }}';
+            }
+
+            const formData = new FormData(form);
+            
+            // UI Loading
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = 'Processing...';
+
+            fetch(targetUrl, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Accept': 'application/json'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload();
+                } else {
+                    alert('Gagal: ' + (data.message || 'Error'));
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Terjadi kesalahan sistem.');
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            });
+        }
+    });
 </script>
