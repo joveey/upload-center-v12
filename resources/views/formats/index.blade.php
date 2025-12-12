@@ -244,13 +244,14 @@
                                     </svg>
                                     Template
                                 </a>
-                                <a href="{{ route('export.data', $mapping->id) }}" 
-                                   class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                <button type="button"
+                                        onclick="openExportModal('{{ route('export.data', $mapping->id) }}', '{{ $mapping->description }}')"
+                                        class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
                                     <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                                     </svg>
                                     Export
-                                </a>
+                                </button>
                             </div>
 
                             @role('super-admin')

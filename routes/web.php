@@ -52,6 +52,10 @@ Route::middleware('auth')->group(function () {
         // Cancel upload (sets cancel flag)
         Route::post('/upload/cancel', [MappingController::class, 'cancelUpload'])
             ->name('upload.cancel');
+
+        // Trim whitespace on existing data
+        Route::post('/mapping/{mapping}/clean', [MappingController::class, 'cleanData'])
+            ->name('mapping.clean.data');
     });
 
     // Register format routes (create/update) - still allowed for permitted users

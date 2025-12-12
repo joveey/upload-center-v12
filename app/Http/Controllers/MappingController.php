@@ -347,6 +347,124 @@ class MappingController extends Controller
     }
 
     /**
+     * Trim whitespace on selected columns for existing data.
+     */
+    public function cleanData(Request $request, MappingIndex $mapping): JsonResponse
+    {
+        $validated = $request->validate([
+            'columns' => ['required', 'array', 'min:1'],
+            'columns.*' => ['string'],
+            'period_date' => ['nullable', 'date'],
+        ]);
+
+        $connection = $mapping->target_connection
+            ?? $mapping->connection
+            ?? config('database.default');
+        $baseTableName = $mapping->table_name;
+
+        if (!Schema::connection($connection)->hasTable($baseTableName) && Schema::connection('sqlsrv_legacy')->hasTable($baseTableName)) {
+            $connection = 'sqlsrv_legacy';
+        }
+
+        $periodFilter = $validated['period_date'] ?? null;
+        /** @var UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(UploadIndexService::class);
+        $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
+
+        $tableName = $baseTableName;
+        if ($activeRun && $activeRun->period_date) {
+            $candidate = $this->buildStrictVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
+            if (Schema::connection($connection)->hasTable($candidate)) {
+                $tableName = $candidate;
+            }
+        }
+
+        if (!Schema::connection($connection)->hasTable($tableName)) {
+            return response()->json(['success' => false, 'message' => "Tabel '{$tableName}' tidak ditemukan."], 404);
+        }
+
+        $actualColumns = Schema::connection($connection)->getColumnListing($tableName);
+        $selectedColumns = [];
+        foreach ($validated['columns'] as $col) {
+            foreach ($actualColumns as $actual) {
+                if (strcasecmp($col, $actual) === 0) {
+                    $selectedColumns[] = $actual;
+                    break;
+                }
+            }
+        }
+
+        if (empty($selectedColumns)) {
+            return response()->json(['success' => false, 'message' => 'Kolom yang dipilih tidak ditemukan di tabel.'], 422);
+        }
+
+        $connectionInstance = DB::connection($connection);
+        $driver = $connectionInstance->getDriverName();
+        $tableHasUploadIndex = Schema::connection($connection)->hasColumn($tableName, 'upload_index');
+
+        // Only operate on string-like columns to avoid corrupting dates/numerics
+        $stringColumns = [];
+        foreach ($selectedColumns as $col) {
+            try {
+                $colType = Schema::connection($connection)->getColumnType($tableName, $col);
+            } catch (\Throwable $e) {
+                continue;
+            }
+            if (in_array(strtolower($colType), ['string', 'text', 'mediumtext', 'longtext', 'char', 'varchar', 'nvarchar', 'nchar'], true)) {
+                $stringColumns[] = $col;
+            }
+        }
+
+        if (empty($stringColumns)) {
+            return response()->json(['success' => false, 'message' => 'Tidak ada kolom teks yang bisa dibersihkan.'], 422);
+        }
+
+        $connectionInstance->transaction(function () use ($connectionInstance, $driver, $tableName, $stringColumns, $tableHasUploadIndex, $activeRun, $mapping, $periodFilter) {
+            foreach ($stringColumns as $col) {
+                $wrappedCol = $connectionInstance->getQueryGrammar()->wrap($col);
+
+                if ($driver === 'sqlsrv') {
+                    // Remove all whitespace characters (space, tab, CR/LF, NBSP) anywhere in the string
+                    $cleanExpr = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({$wrappedCol}, CHAR(160), ''), CHAR(9), ''), CHAR(10), ''), CHAR(13), ''), ' ', '')";
+                    $trimExpr = DB::raw($cleanExpr);
+                } else {
+                    // Remove all whitespace characters (space, tab, CR/LF, NBSP) anywhere in the string
+                    $cleanExpr = "REPLACE(REPLACE(REPLACE(REPLACE({$wrappedCol}, '\\t', ''), '\\r', ''), '\\n', ''), CHAR(160), '')";
+                    $cleanExpr = "REPLACE({$cleanExpr}, ' ', '')";
+                    $trimExpr = DB::raw($cleanExpr);
+                }
+
+                $query = $connectionInstance->table($tableName)->whereNotNull($col);
+                if ($tableHasUploadIndex && $activeRun) {
+                    $query->where('upload_index', $activeRun->upload_index);
+                }
+                $query->update([$col => $trimExpr]);
+            }
+
+            if (Schema::hasTable('upload_logs')) {
+                DB::table('upload_logs')->insert([
+                    'user_id' => Auth::id(),
+                    'division_id' => Auth::user()?->division_id,
+                    'mapping_index_id' => $mapping->id,
+                    'file_name' => 'manual-clean',
+                    'rows_imported' => 0,
+                    'status' => 'success',
+                    'action' => 'clean_trim',
+                    'upload_mode' => null,
+                    'error_message' => null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Spasi berhasil dibersihkan untuk kolom: ' . implode(', ', $selectedColumns),
+        ]);
+    }
+
+    /**
      * Extract headers from uploaded Excel (for register form).
      */
     public function extractHeaders(Request $request): JsonResponse
@@ -1065,22 +1183,64 @@ class MappingController extends Controller
                 ->with('error', 'Anda tidak memiliki akses untuk menghapus isi format ini.');
         }
 
-        $tableName = $mapping->table_name;
-        if (!$tableName || !Schema::hasTable($tableName)) {
+        $baseTableName = $mapping->table_name;
+        $connection = $mapping->target_connection
+            ?? $mapping->connection
+            ?? config('database.default');
+
+        // Fallback to legacy if not found on chosen connection
+        if (!Schema::connection($connection)->hasTable($baseTableName) && Schema::connection('sqlsrv_legacy')->hasTable($baseTableName)) {
+            $connection = 'sqlsrv_legacy';
+        }
+
+        // Determine active table (handles strict versioned table)
+        /** @var UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(UploadIndexService::class);
+        $activeRun = $uploadIndexService->getActiveRun($mapping->id);
+        $tableName = $baseTableName;
+        if ($activeRun && $activeRun->period_date) {
+            $candidate = $this->buildStrictVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
+            if (Schema::connection($connection)->hasTable($candidate)) {
+                $tableName = $candidate;
+            }
+        }
+
+        if (!$tableName || !Schema::connection($connection)->hasTable($tableName)) {
             return redirect()->route('formats.index')->with('error', "Tabel '{$tableName}' tidak ditemukan.");
         }
 
         try {
-            $rowCount = DB::table($tableName)->count();
+            $connectionInstance = DB::connection($connection);
+            $rowCount = $connectionInstance->table($tableName)->count();
 
-            $driver = DB::connection()->getDriverName();
+            $driver = $connectionInstance->getDriverName();
 
-            if ($driver === 'sqlsrv') {
-                DB::statement("TRUNCATE TABLE [{$tableName}]");
-            } elseif ($driver === 'pgsql') {
-                DB::statement("TRUNCATE TABLE \"{$tableName}\" RESTART IDENTITY CASCADE");
-            } else {
-                DB::statement("TRUNCATE TABLE `{$tableName}`");
+            $resetIdentity = function () use ($connectionInstance, $driver, $tableName) {
+                try {
+                    if ($driver === 'sqlsrv') {
+                        $connectionInstance->statement("DBCC CHECKIDENT ('[{$tableName}]', RESEED, 0)");
+                    } elseif ($driver === 'pgsql') {
+                        $connectionInstance->statement("SELECT setval(pg_get_serial_sequence('{$tableName}', 'id'), 1, false)");
+                    } else {
+                        $connectionInstance->statement("ALTER TABLE `{$tableName}` AUTO_INCREMENT = 1");
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("Gagal reset identity untuk tabel {$tableName} (conn: {$connection}): " . $e->getMessage());
+                }
+            };
+
+            try {
+                if ($driver === 'sqlsrv') {
+                    $connectionInstance->statement("TRUNCATE TABLE [{$tableName}]");
+                } elseif ($driver === 'pgsql') {
+                    $connectionInstance->statement("TRUNCATE TABLE \"{$tableName}\" RESTART IDENTITY CASCADE");
+                } else {
+                    $connectionInstance->statement("TRUNCATE TABLE `{$tableName}`");
+                }
+            } catch (\Throwable $t) {
+                // Fallback: delete all rows then reset identity
+                $connectionInstance->table($tableName)->delete();
+                $resetIdentity();
             }
 
             Log::warning("Tabel {$tableName} dikosongkan & ID di-reset ({$rowCount} baris dihapus) oleh user {$user->id}");
@@ -2264,7 +2424,7 @@ class MappingController extends Controller
         if (!$periodColumnRule) {
             $periodColumnRule = $mapping->columns->first(function ($col) {
                 $name = strtolower($col->table_column_name);
-                return in_array($name, ['period', 'periode', 'period_dt', 'perioddate'], true);
+                return in_array($name, ['period', 'periode', 'period_dt', 'perioddate',], true);
             });
         }
         if (!$periodColumnRule) {
