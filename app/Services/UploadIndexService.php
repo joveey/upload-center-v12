@@ -139,14 +139,44 @@ class UploadIndexService
      */
     public function getActiveRun(int $mappingId, ?string $periodDate = null): ?object
     {
-        return DB::connection($this->controlConnection)
+        $query = DB::connection($this->controlConnection)
             ->table('mapping_upload_runs')
             ->where('mapping_index_id', $mappingId)
             ->where('status', 'active')
-            ->when($periodDate !== null, fn($q) => $q->where('period_date', $periodDate))
+            ->when($periodDate !== null, fn($q) => $q->where('period_date', $periodDate));
+
+        if ($periodDate !== null) {
+            // If a specific period is requested, pick the latest upload_index for that period
+            $query->orderByDesc('upload_index');
+        } else {
+            // Otherwise, show the most recently finished/updated run regardless of period
+            $query->orderByDesc('finished_at')
+                  ->orderByDesc('updated_at')
+                  ->orderByDesc('upload_index');
+        }
+
+        return $query->first();
+    }
+
+    /**
+     * Get all active runs for a mapping (latest per period).
+     *
+     * @return \Illuminate\Support\Collection|object[]
+     */
+    public function getActiveRuns(int $mappingId)
+    {
+        $runs = DB::connection($this->controlConnection)
+            ->table('mapping_upload_runs')
+            ->where('mapping_index_id', $mappingId)
+            ->where('status', 'active')
             ->orderByDesc('period_date')
             ->orderByDesc('upload_index')
-            ->first();
+            ->get();
+
+        // Keep only the latest upload_index per period_date (including null)
+        return $runs->unique(function ($run) {
+            return ($run->period_date ?? 'NULL') . '|' . $run->mapping_index_id;
+        });
     }
 
     /**

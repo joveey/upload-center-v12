@@ -22,17 +22,17 @@
                 </div>
             </div>
             <div class="flex items-center space-x-3">
-                <a href="{{ route('export.data', $mapping->id) }}" 
-                   class="inline-flex items-center px-5 py-2.5 bg-green-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-200 shadow-sm hover:shadow-md group">
+                <button type="button"
+                        onclick="openExportModal('{{ route('export.data', $mapping->id) }}', '{{ $mapping->description }}')"
+                        class="inline-flex items-center px-5 py-2.5 bg-green-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-200 shadow-sm hover:shadow-md group">
                     <svg class="w-5 h-5 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                     </svg>
                     Export Excel
-                </a>
+                </button>
                 <button type="button"
                         id="btn-open-trim"
                         class="inline-flex items-center px-4 py-2.5 bg-indigo-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-200 shadow-sm hover:shadow-md">
-                    <span class="mr-2">✨</span>
                     Trim Spasi
                 </button>
                 @role('super-admin')
@@ -236,6 +236,36 @@
     <div class="absolute inset-0 hidden" id="trimModalCloser"></div>
 </div>
 
+<!-- Export Modal -->
+<div id="exportModal" class="fixed inset-0 z-50 hidden items-center justify-center">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <h3 class="text-xl font-bold text-gray-900" id="exportModalTitle">Export Data</h3>
+                <p class="text-sm text-gray-600 mt-1">Silakan pilih periode data yang ingin diexport.</p>
+            </div>
+            <button type="button" id="btn-export-close" class="text-gray-500 hover:text-gray-800">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <form id="exportForm" method="GET">
+            <div class="mb-4">
+                <label class="block text-sm font-semibold text-gray-800 mb-1">Periode</label>
+                <input type="date" name="period_date" required
+                       class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
+                <p class="text-xs text-gray-500 mt-1">Pilih tanggal periode (biasanya tanggal 1 bulan tersebut).</p>
+            </div>
+            <div class="flex items-center justify-end space-x-3">
+                <button type="button" id="btn-export-cancel" class="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">Batal</button>
+                <button type="submit" class="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] rounded-lg">Download</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.btn-delete-format').forEach((btn) => {
@@ -337,6 +367,43 @@
                     trimSubmit.textContent = originalText;
                     toggleTrimModal(false);
                 });
+        });
+
+        // Export modal logic
+        const exportModal = document.getElementById('exportModal');
+        const exportForm = document.getElementById('exportForm');
+        const exportTitle = document.getElementById('exportModalTitle');
+        const showExport = () => {
+            exportModal.classList.remove('hidden');
+            exportModal.classList.add('flex');
+        };
+        const closeExport = () => {
+            exportModal.classList.add('hidden');
+            exportModal.classList.remove('flex');
+        };
+
+        window.openExportModal = (url, title) => {
+            exportForm.setAttribute('action', url);
+            exportTitle.textContent = title ? `Export Data - ${title}` : 'Export Data';
+            showExport();
+        };
+
+        document.getElementById('btn-export-close')?.addEventListener('click', closeExport);
+        document.getElementById('btn-export-cancel')?.addEventListener('click', closeExport);
+        exportModal?.addEventListener('click', (e) => {
+            if (e.target === exportModal) closeExport();
+        });
+
+        // Ensure export form submits normally after validation
+        exportForm?.addEventListener('submit', (e) => {
+            const dateInput = exportForm.querySelector('input[name="period_date"]');
+            if (!dateInput?.value) {
+                e.preventDefault();
+                alert('Silakan pilih periode terlebih dahulu.');
+                return;
+            }
+            closeExport();
+            // allow normal GET submit with period_date input included
         });
     });
 </script>

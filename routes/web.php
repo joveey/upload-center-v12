@@ -26,14 +26,20 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     
     // Export routes
-    Route::get('/export/{mapping}', [App\Http\Controllers\ExportController::class, 'export'])
-        ->name('export.data');
-    Route::get('/export-template/{mapping}', [App\Http\Controllers\ExportController::class, 'exportTemplate'])
-        ->name('export.template');
+    Route::middleware('can:export data')->group(function () {
+        Route::get('/export/{mapping}', [App\Http\Controllers\ExportController::class, 'export'])
+            ->name('export.data');
+    });
+    Route::middleware('can:download template')->group(function () {
+        Route::get('/export-template/{mapping}', [App\Http\Controllers\ExportController::class, 'exportTemplate'])
+            ->name('export.template');
+    });
     
     // View data route - NEW
-    Route::get('/mapping/{mapping}/view', [MappingController::class, 'viewData'])
-        ->name('mapping.view.data');
+    Route::middleware('can:view data')->group(function () {
+        Route::get('/mapping/{mapping}/view', [MappingController::class, 'viewData'])
+            ->name('mapping.view.data');
+    });
 
     // Upload routes
     Route::middleware('can:upload data')->group(function () {
@@ -58,8 +64,8 @@ Route::middleware('auth')->group(function () {
             ->name('mapping.clean.data');
     });
 
-    // Register format routes (create/update) - still allowed for permitted users
-    Route::middleware('can:register format')->group(function () {
+    // Register format routes (create/update)
+    Route::middleware('can:create format')->group(function () {
         Route::get('/register-format', [MappingController::class, 'showRegisterForm'])
             ->name('mapping.register.form');
         Route::post('/register-format', [MappingController::class, 'processRegisterForm'])
@@ -75,7 +81,7 @@ Route::middleware('auth')->group(function () {
         ->name('legacy.format.list');
 
     Route::post('/legacy-format/quick-map', [LegacyFormatController::class, 'quickMap'])
-        ->middleware('can:register format')
+        ->middleware('can:create format')
         ->name('legacy.format.quick-map');
 
     Route::get('/legacy-format/{mapping}', [LegacyFormatController::class, 'index'])
@@ -91,13 +97,25 @@ Route::middleware('auth')->group(function () {
     Route::get('/activity', [UploadLogController::class, 'index'])
         ->name('logs.index');
 
-    // User management (super admin only)
-    Route::middleware('role:super-admin')->group(function () {
+    // User management (superuser only)
+    Route::middleware('role:superuser')->group(function () {
         Route::get('/admin/users', [UserManagementController::class, 'index'])
             ->name('admin.users.index');
+        Route::get('/admin/users/list', [UserManagementController::class, 'list'])
+            ->name('admin.users.list');
         Route::post('/admin/users', [UserManagementController::class, 'store'])
             ->name('admin.users.store');
-        // Only super admin can delete format or clear data
+        Route::put('/admin/users/{user}', [UserManagementController::class, 'update'])
+            ->name('admin.users.update');
+        Route::delete('/admin/users/{user}', [UserManagementController::class, 'destroy'])
+            ->name('admin.users.destroy');
+
+        // Division management
+        Route::resource('divisions', \App\Http\Controllers\DivisionController::class)->only(['index', 'store', 'update', 'destroy']);
+    });
+
+    // Delete / clear format
+    Route::middleware('can:delete format')->group(function () {
         Route::delete('/mapping/{mapping}/data', [MappingController::class, 'clearData'])
             ->name('mapping.clear.data');
         Route::delete('/mapping/{mapping}', [MappingController::class, 'destroy'])

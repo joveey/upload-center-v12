@@ -29,20 +29,43 @@ class ExportController extends Controller
 
         // Export dibuka untuk semua user yang login; pembatasan hanya untuk aksi hapus.
 
-        $tableName = $mapping->table_name;
+        $baseTableName = $mapping->table_name;
         $connection = $mapping->target_connection
             ?? $mapping->connection
             ?? config('database.default');
 
         // Jika tabel tidak ada di koneksi terpilih tapi ada di legacy, gunakan legacy
-        if (!Schema::connection($connection)->hasTable($tableName) && Schema::connection('sqlsrv_legacy')->hasTable($tableName)) {
+        if (!Schema::connection($connection)->hasTable($baseTableName) && Schema::connection('sqlsrv_legacy')->hasTable($baseTableName)) {
             $connection = 'sqlsrv_legacy';
         }
-        $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
-        if ($activeRun && $activeRun->period_date) {
-            $candidate = $uploadIndexService->buildVersionTableName($tableName, $activeRun->period_date, (int) $activeRun->upload_index);
-            if (Schema::connection($connection)->hasTable($candidate)) {
-                $tableName = $candidate;
+
+        $tableName = $baseTableName;
+        $activeRun = null;
+        // Resolve run for requested period (latest)
+        if ($periodFilter) {
+            $periodRun = DB::table('mapping_upload_runs')
+                ->where('mapping_index_id', $mapping->id)
+                ->where('period_date', $periodFilter)
+                ->orderByDesc('upload_index')
+                ->first();
+
+            if ($periodRun) {
+                $activeRun = (object) $periodRun;
+                $candidate = $uploadIndexService->buildVersionTableName($baseTableName, $periodRun->period_date, (int) $periodRun->upload_index);
+                if (Schema::connection($connection)->hasTable($candidate)) {
+                    $tableName = $candidate;
+                }
+            }
+        }
+
+        // Fallback to active run (latest) if none matched the requested period
+        if (! $activeRun) {
+            $activeRun = $uploadIndexService->getActiveRun($mapping->id, null);
+            if ($activeRun && $activeRun->period_date) {
+                $candidate = $uploadIndexService->buildVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
+                if (Schema::connection($connection)->hasTable($candidate)) {
+                    $tableName = $candidate;
+                }
             }
         }
         
@@ -57,16 +80,40 @@ class ExportController extends Controller
         }
 
         $actualTableColumns = Schema::connection($connection)->getColumnListing($tableName);
+
+        // Determine period column (period_date or legacy aliases)
+        $periodColumn = null;
+        foreach (['period', 'period_date', 'periode', 'period_dt', 'perioddate'] as $candidate) {
+            if (in_array($candidate, $actualTableColumns)) {
+                $periodColumn = $candidate;
+                break;
+            }
+        }
+
+        // Remove duplicate period-like columns except the chosen one
+        if ($periodColumn) {
+            $periodAliases = ['period', 'period_date', 'periode', 'period_dt', 'perioddate'];
+            $periodAliases = array_diff($periodAliases, [$periodColumn]);
+            $columnMapping = array_filter($columnMapping, function ($dbCol) use ($periodAliases) {
+                return !in_array($dbCol, $periodAliases, true);
+            });
+            // Avoid duplicate column: remove the chosen period column from the mapped list; we'll add it once below.
+            $columnMapping = array_filter($columnMapping, function ($dbCol) use ($periodColumn) {
+                return $dbCol !== $periodColumn;
+            });
+        }
+
+        // Recompute valid columns after filtering
         $validColumns = array_intersect(array_values($columnMapping), $actualTableColumns);
 
         if (empty($validColumns)) {
             return back()->with('error', 'Konfigurasi mapping tidak sesuai dengan skema tabel. Tidak ada kolom valid yang bisa diexport.');
         }
 
-        // Include period_date, created_at, updated_at in select if they exist
+        // Include period, created_at, updated_at in select if they exist
         $selectColumns = $validColumns;
-        if (in_array('period_date', $actualTableColumns)) {
-            $selectColumns[] = 'period_date';
+        if ($periodColumn) {
+            $selectColumns[] = $periodColumn;
         }
         if (in_array('created_at', $actualTableColumns)) {
             $selectColumns[] = 'created_at';
@@ -88,8 +135,8 @@ class ExportController extends Controller
         }
         
         // TAMBAHAN: Filter by period if provided
-        if ($request->has('period_date') && $request->period_date && in_array('period_date', $actualTableColumns)) {
-            $query->where('period_date', $request->period_date);
+        if ($periodColumn && $request->has('period_date') && $request->period_date) {
+            $query->whereDate($periodColumn, $request->period_date);
         }
 
         // Count first to decide output mode
@@ -103,8 +150,8 @@ class ExportController extends Controller
             $dbColumn = $columnMapping[$excelCol];
             $headerRow[] = ucwords(str_replace('_', ' ', $dbColumn));
         }
-        if (in_array('period_date', $actualTableColumns)) {
-            $headerRow[] = 'Period Date';
+        if ($periodColumn) {
+            $headerRow[] = 'Period';
         }
         if (in_array('created_at', $actualTableColumns)) {
             $headerRow[] = 'Created At';
@@ -120,7 +167,7 @@ class ExportController extends Controller
             : ($selectColumns[0] ?? $validColumns[0] ?? 'id');
         $fileName = $mapping->code . '_' . date('Y-m-d_His') . '.xlsx';
 
-        return response()->streamDownload(function () use ($query, $headerRow, $columnMapping, $actualTableColumns, $chunkSize, $orderColumn) {
+        return response()->streamDownload(function () use ($query, $headerRow, $columnMapping, $actualTableColumns, $chunkSize, $orderColumn, $periodColumn) {
             $writer = new Writer();
             $writer->openToFile('php://output');
 
@@ -128,15 +175,15 @@ class ExportController extends Controller
             $writer->addRow(Row::fromValues($headerRow, $headerStyle));
 
             // SQL Server chunk requires explicit order
-            $query->orderBy($orderColumn)->chunk($chunkSize, function ($rows) use ($writer, $columnMapping, $actualTableColumns) {
+            $query->orderBy($orderColumn)->chunk($chunkSize, function ($rows) use ($writer, $columnMapping, $actualTableColumns, $periodColumn) {
                 foreach ($rows as $item) {
                     $rowData = [];
                     foreach (array_keys($columnMapping) as $excelCol) {
                         $dbColumn = $columnMapping[$excelCol];
                         $rowData[] = $item->{$dbColumn} ?? '';
                     }
-                    if (in_array('period_date', $actualTableColumns)) {
-                        $rowData[] = $item->period_date ?? '';
+                    if ($periodColumn) {
+                        $rowData[] = $item->{$periodColumn} ?? '';
                     }
                     if (in_array('created_at', $actualTableColumns)) {
                         $rowData[] = $item->created_at ?? '';

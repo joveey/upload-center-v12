@@ -29,7 +29,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
                     </svg>
                 </form>
-                @role('super-admin')
+                @can('create format')
                     <a href="{{ route('mapping.register.form') }}">
                         <button class="inline-flex items-center px-5 py-2.5 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -38,7 +38,17 @@
                             Buat Format Baru
                         </button>
                     </a>
-                @endrole
+                @endcan
+                @can('manage users')
+                    <a href="{{ route('divisions.index') }}">
+                        <button class="inline-flex items-center px-4 py-2.5 bg-white border border-gray-200 hover:border-gray-300 rounded-lg font-medium text-sm text-gray-800 transition-colors duration-200 shadow-sm">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18"></path>
+                            </svg>
+                            Kelola Divisi
+                        </button>
+                    </a>
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -229,32 +239,38 @@
                             @endif
 
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <a href="{{ route('mapping.view.data', $mapping->id) }}" 
-                                   class="inline-flex items-center justify-center px-4 py-3 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
-                                    <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                                    </svg>
-                                    Lihat
-                                </a>
-                                <a href="{{ route('export.template', $mapping->id) }}" 
-                                   class="inline-flex items-center justify-center px-4 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-800 uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/30 transition-all duration-200 shadow-md hover:shadow-lg group">
-                                    <svg class="w-4 h-4 mr-2 text-[#0057b7] group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m0 0l-4-4m4 4l4-4M4 8h16"></path>
-                                    </svg>
-                                    Template
-                                </a>
-                                <button type="button"
-                                        onclick="openExportModal('{{ route('export.data', $mapping->id) }}', '{{ $mapping->description }}')"
-                                        class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
-                                    <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                                    </svg>
-                                    Export
-                                </button>
+                                @can('view data')
+                                    <a href="{{ route('mapping.view.data', $mapping->id) }}" 
+                                       class="inline-flex items-center justify-center px-4 py-3 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                        <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                        </svg>
+                                        Lihat
+                                    </a>
+                                @endcan
+                                @can('download template')
+                                    <a href="{{ route('export.template', $mapping->id) }}" 
+                                       class="inline-flex items-center justify-center px-4 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-800 uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/30 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                        <svg class="w-4 h-4 mr-2 text-[#0057b7] group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m0 0l-4-4m4 4l4-4M4 8h16"></path>
+                                        </svg>
+                                        Template
+                                    </a>
+                                @endcan
+                                @can('export data')
+                                    <button type="button"
+                                            onclick="openExportModal('{{ route('export.data', $mapping->id) }}', '{{ $mapping->description }}')"
+                                            class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                        <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                        </svg>
+                                        Export
+                                    </button>
+                                @endcan
                             </div>
 
-                            @role('super-admin')
+                            @can('delete format')
                                 <div class="mt-4 rounded-2xl border border-amber-100 bg-gradient-to-br from-[#fff7ed] via-[#fff3e6] to-[#ffe8dc] p-4 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)] space-y-4">
                                     <div class="flex items-start space-x-3">
                                         <div class="flex-1 space-y-1">
@@ -305,7 +321,7 @@
                                         </form>
                                     </div>
                                 </div>
-                            @endrole
+                            @endcan
                         </div>
                     </div>
                 @empty
@@ -316,7 +332,7 @@
                             </svg>
                             <h3 class="text-xl font-bold text-gray-900 mb-2">Belum Ada Format</h3>
                             <p class="text-gray-600 mb-6">Buat format baru untuk memulai mengelola data Excel Anda</p>
-                            @role('super-admin')
+                            @can('create format')
                                 {{-- Diubah: Tombol pada state kosong --}}
                                 <a href="{{ route('mapping.register.form') }}" 
                                    class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-[#003b7a] hover:to-[#0091cf] focus:outline-none focus:ring-4 focus:ring-[#0057b7]/40 transition-all duration-300 shadow-lg hover:shadow-xl">
@@ -325,7 +341,7 @@
                                     </svg>
                                     Buat Format Pertama
                                 </a>
-                            @endrole
+                            @endcan
                         </div>
                     </div>
                 @endforelse
@@ -339,6 +355,36 @@
         </div>
     </div>
 </x-app-layout>
+
+<!-- Export Modal -->
+<div id="exportModal" class="fixed inset-0 z-50 hidden items-center justify-center">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <h3 class="text-xl font-bold text-gray-900" id="exportModalTitle">Export Data</h3>
+                <p class="text-sm text-gray-600 mt-1">Silakan pilih periode data yang ingin diexport.</p>
+            </div>
+            <button type="button" id="btn-export-close" class="text-gray-500 hover:text-gray-800">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <form id="exportForm" method="GET">
+            <div class="mb-4">
+                <label class="block text-sm font-semibold text-gray-800 mb-1">Periode</label>
+                <input type="date" name="period_date" required
+                       class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
+                <p class="text-xs text-gray-500 mt-1">Pilih tanggal periode (biasanya tanggal 1 bulan tersebut).</p>
+            </div>
+            <div class="flex items-center justify-end space-x-3">
+                <button type="button" id="btn-export-cancel" class="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">Batal</button>
+                <button type="submit" class="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] rounded-lg">Download</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <script>
     document.addEventListener('DOMContentLoaded', () => {
@@ -377,6 +423,31 @@
 
                 btn.closest('form').submit();
             });
+        });
+
+        // Export modal logic
+        const exportModal = document.getElementById('exportModal');
+        const exportForm = document.getElementById('exportForm');
+        const exportTitle = document.getElementById('exportModalTitle');
+        const showExport = () => {
+            exportModal.classList.remove('hidden');
+            exportModal.classList.add('flex');
+        };
+        const closeExport = () => {
+            exportModal.classList.add('hidden');
+            exportModal.classList.remove('flex');
+        };
+
+        window.openExportModal = (url, title) => {
+            exportForm.setAttribute('action', url);
+            exportTitle.textContent = title ? `Export Data - ${title}` : 'Export Data';
+            showExport();
+        };
+
+        document.getElementById('btn-export-close')?.addEventListener('click', closeExport);
+        document.getElementById('btn-export-cancel')?.addEventListener('click', closeExport);
+        exportModal?.addEventListener('click', (e) => {
+            if (e.target === exportModal) closeExport();
         });
     });
 

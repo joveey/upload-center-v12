@@ -16,6 +16,14 @@
                     </p>
                 </div>
             </div>
+            @can('manage users')
+                <a href="{{ route('divisions.index') }}" class="inline-flex items-center px-4 py-2 bg-white border border-gray-200 hover:border-gray-300 rounded-lg text-sm font-semibold text-gray-800 shadow-sm">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18"></path>
+                    </svg>
+                    Kelola Divisi
+                </a>
+            @endcan
         </div>
     </x-slot>
 
@@ -41,9 +49,6 @@
                     <div>
                         <p class="text-lg font-semibold text-white">Buat User Baru</p>
                     </div>
-                    <span class="text-xs px-3 py-1 rounded-full bg-white/15 text-white font-semibold border border-white/30">
-                        Role otomatis mengikuti divisi
-                    </span>
                 </div>
                 <div class="p-6">
                     <form method="POST" action="{{ route('admin.users.store') }}" class="space-y-5">
@@ -75,6 +80,17 @@
                                     @endforeach
                                 </select>
                                 <x-input-error :messages="$errors->get('division_id')" />
+                            </div>
+
+                            <div class="space-y-2">
+                                <x-input-label for="role" value="Role" />
+                                <select id="role" name="role" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 focus:ring-opacity-50" required>
+                                    <option value="">Pilih role</option>
+                                    @foreach ($roles as $role)
+                                        <option value="{{ $role->name }}" @selected(old('role') == $role->name)>{{ $role->name }}</option>
+                                    @endforeach
+                                </select>
+                                <x-input-error :messages="$errors->get('role')" />
                             </div>
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -110,53 +126,12 @@
                 <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
                     <div>
                         <p class="text-sm text-gray-600">Daftar User</p>
-                        <p class="text-lg font-semibold text-gray-900">Dibuat oleh admin</p>
+                        <p class="text-lg font-semibold text-gray-900">Kelola user di halaman terpisah</p>
                     </div>
-                    <span class="text-xs px-3 py-1 rounded-full bg-[#e8f1fb] text-[#0057b7] font-semibold border border-[#c7d9f3]">
-                        Total: {{ $users->total() }}
-                    </span>
+                    <a href="{{ route('admin.users.list') }}" class="inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-[#0057b7] hover:bg-[#004a99] rounded-lg shadow-sm">
+                        Kelola Daftar User
+                    </a>
                 </div>
-
-                <div class="p-6 overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead>
-                            <tr class="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                <th class="py-3">Nama</th>
-                                <th class="py-3">Email</th>
-                                <th class="py-3">Divisi</th>
-                                <th class="py-3">Role</th>
-                                <th class="py-3">Dibuat</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            @forelse ($users as $user)
-                                <tr class="hover:bg-gray-50">
-                                    <td class="py-3 font-semibold text-gray-900">{{ $user->name }}</td>
-                                    <td class="py-3 text-gray-700">{{ $user->email }}</td>
-                                    <td class="py-3">
-                                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold {{ optional($user->division)->is_super_user ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-[#e8f1fb] text-[#0057b7] border border-[#c7d9f3]' }}">
-                                            {{ $user->division->name ?? 'Tidak ada' }}
-                                        </span>
-                                    </td>
-                                    <td class="py-3 text-gray-700">
-                                        {{ $user->roles->pluck('name')->implode(', ') ?: '-' }}
-                                    </td>
-                                    <td class="py-3 text-gray-500">{{ $user->created_at?->format('d M Y') }}</td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="5" class="py-4 text-center text-gray-500">Belum ada user.</td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-
-                @if ($users->hasPages())
-                    <div class="px-6 py-4 border-t border-gray-200">
-                        {{ $users->links() }}
-                    </div>
-                @endif
             </div>
         </div>
     </div>

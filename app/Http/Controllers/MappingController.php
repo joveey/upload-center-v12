@@ -13,6 +13,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -285,19 +286,18 @@ class MappingController extends Controller
 
         /** @var UploadIndexService $uploadIndexService */
         $uploadIndexService = app(UploadIndexService::class);
-        $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
+        $activeRun = null;
+        $activeRuns = collect();
         $tableName = $baseTableName;
-        if ($activeRun && $activeRun->period_date) {
-            $candidate = $this->buildStrictVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
-            if (Schema::connection($connection)->hasTable($candidate)) {
-                $tableName = $candidate;
-            }
+
+        /** @var UploadIndexService $uploadIndexService */
+        $uploadIndexService = app(UploadIndexService::class);
+        if ($periodFilter) {
+            $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
+        } else {
+            $activeRuns = $uploadIndexService->getActiveRuns($mapping->id);
         }
 
-        if (!Schema::connection($connection)->hasTable($tableName)) {
-            return back()->with('error', "Tabel '{$tableName}' tidak ditemukan di koneksi {$connection}.");
-        }
-        
         // Get column mapping sorted by Excel column order
         $columnMapping = $mapping->columns
             ->sortBy(fn($col) => $this->columnLetterToIndex($col->excel_column_index))
@@ -308,38 +308,78 @@ class MappingController extends Controller
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
         }
 
-        // Get actual table columns
-        $actualTableColumns = Schema::connection($connection)->getColumnListing($tableName);
-        $validColumns = array_intersect(array_values($columnMapping), $actualTableColumns);
+        $selectColumns = [];
+        $validColumns = [];
 
-        if (empty($validColumns)) {
-            return back()->with('error', 'Konfigurasi mapping tidak sesuai dengan skema tabel.');
-        }
+        $rowsCollection = collect();
 
-        // Pastikan hanya memilih kolom yang benar-benar ada
-        $selectColumns = array_values(array_unique(array_filter(array_merge(['id'], $validColumns, ['created_at', 'updated_at']), function ($col) use ($actualTableColumns) {
-            return in_array($col, $actualTableColumns, true);
-        })));
+        // Helper to collect data from a specific table (versioned) with optional upload_index filter
+        $collectFromTable = function (string $tblName, ?int $uploadIndex = null) use ($connection, $user, &$validColumns, &$selectColumns, $columnMapping) {
+            if (!Schema::connection($connection)->hasTable($tblName)) {
+                return collect();
+            }
+            $actualTableColumns = Schema::connection($connection)->getColumnListing($tblName);
+            $valid = array_intersect(array_values($columnMapping), $actualTableColumns);
+            if (empty($valid)) {
+                return collect();
+            }
+            // Cache once
+            if (empty($selectColumns) || empty($validColumns)) {
+                $validColumns = $valid;
+                $selectColumns = array_values(array_unique(array_filter(array_merge(['id'], $valid, ['period', 'period_date', 'created_at', 'updated_at']), function ($col) use ($actualTableColumns) {
+                    return in_array($col, $actualTableColumns, true);
+                })));
+            }
 
-        // Build query
-        $query = DB::connection($connection)->table($tableName)->select($selectColumns);
-        if (in_array('upload_index', $actualTableColumns, true) && $activeRun) {
-            $query->where('upload_index', $activeRun->upload_index);
-        }
-        
-        // Filter by division if not super-admin
-        if (!$this->userHasRole($user, 'super-admin')) {
-            if (in_array('division_id', $actualTableColumns)) {
-                $query->where('division_id', $user->division_id);
+            $q = DB::connection($connection)->table($tblName)->select($selectColumns);
+            if ($uploadIndex !== null && in_array('upload_index', $actualTableColumns, true)) {
+                $q->where('upload_index', $uploadIndex);
+            }
+            if (!$this->userHasRole($user, 'super-admin') && in_array('division_id', $actualTableColumns)) {
+                $q->where('division_id', $user->division_id);
+            }
+            return $q->get();
+        };
+
+        if ($periodFilter && $activeRun && $activeRun->period_date) {
+            $candidate = $this->buildStrictVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
+            $rowsCollection = $collectFromTable($candidate, (int) $activeRun->upload_index);
+            $tableName = $candidate;
+        } else {
+            // No filter: show all active periods (latest per period)
+            if ($activeRuns->isEmpty() && Schema::connection($connection)->hasTable($baseTableName)) {
+                $rowsCollection = $collectFromTable($baseTableName);
+            } else {
+                foreach ($activeRuns as $run) {
+                    if (!$run->period_date) {
+                        continue;
+                    }
+                    $candidate = $this->buildStrictVersionTableName($baseTableName, $run->period_date, (int) $run->upload_index);
+                    $rowsCollection = $rowsCollection->merge(
+                        $collectFromTable($candidate, (int) $run->upload_index)
+                    );
+                }
             }
         }
-        
-        // Paginate results - order by ID ascending (smallest first)
-        $data = $query->orderBy('id', 'asc')->paginate(50);
+
+        // If still empty and table missing, return error
+        if ($rowsCollection === null) {
+            return back()->with('error', "Tabel untuk period terpilih tidak ditemukan di koneksi {$connection}.");
+        }
+
+        // Manual pagination for merged collections
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $perPage = 50;
+        $total = $rowsCollection->count();
+        $items = $rowsCollection->values()->forPage($page, $perPage);
+        $data = new LengthAwarePaginator($items, $total, $perPage, $page, [
+            'path' => request()->url(),
+            'query' => request()->query(),
+        ]);
 
         return view('view_data', [
             'mapping' => $mapping,
-            'columns' => $validColumns,
+            'columns' => $validColumns ?: array_values($columnMapping),
             'data' => $data,
             'columnMapping' => $columnMapping,
             'period_date' => $activeRun->period_date ?? $periodFilter,
@@ -1380,13 +1420,21 @@ class MappingController extends Controller
         if ($value === null || $value === '') {
             return $value;
         }
+        if (is_string($value)) {
+            $value = trim($value);
+        }
 
-        // 1. Check if already in Database Format (Y-m-d)
+        // 1. If it's already a DateTime instance
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        // 2. Check if already in Database Format (Y-m-d)
         if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
             return $value;
         }
 
-        // 2. Check Numeric (Excel Serial Date)
+        // 3. Check Numeric (Excel Serial Date)
         if (is_numeric($value) && $value >= 18264 && $value <= 60000) {
             try {
                 $unixTimestamp = ($value - 25569) * 86400;
@@ -1396,7 +1444,17 @@ class MappingController extends Controller
             }
         }
 
-        // 3. Fallback: Carbon Parse (Human Readable like '03-Mar-2025')
+        // 4. Try explicit d/m/Y or d-m-Y (common spreadsheet text export)
+        if (is_string($value) && preg_match('/^(\\d{1,2})[\\/\\-](\\d{1,2})[\\/\\-](\\d{4})$/', $value, $m)) {
+            // Assume day-month-year; if ambiguous (both <=12) still treat first as day to match local usage
+            try {
+                return \Carbon\Carbon::createFromFormat('d-m-Y', "{$m[1]}-{$m[2]}-{$m[3]}")->format('Y-m-d');
+            } catch (\Exception $e) {
+                // continue to fallback
+            }
+        }
+
+        // 5. Fallback: Carbon Parse (Human Readable like '03-Mar-2025')
         try {
             return \Carbon\Carbon::parse($value)->format('Y-m-d');
         } catch (\Exception $e) {
@@ -2396,11 +2454,12 @@ class MappingController extends Controller
         /** @var \App\Services\UploadIndexService $uploadIndexService */
         $uploadIndexService = app(\App\Services\UploadIndexService::class);
 
-        // 1. Validate Input (No manual period_date needed)
+        // 1. Validate Input (Period is required from user selection)
         $validated = $request->validate([
             'data_file' => ['required', File::types(['xlsx', 'xls', 'csv'])],
             'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
             'sheet_name' => ['nullable', 'string'],
+            'period_date' => ['required', 'date'],
         ]);
 
         $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
@@ -2419,20 +2478,17 @@ class MappingController extends Controller
             $connection = 'sqlsrv_legacy';
         }
 
-        // 3. Find Mapping for 'period_date' (with legacy alias fallback)
-        $periodColumnRule = $mapping->columns->firstWhere('table_column_name', 'period_date');
+        // 3. Find Mapping for period (support aliases)
+        $periodColumnRule = $mapping->columns->first(function ($col) {
+            $name = strtolower($col->table_column_name);
+            return in_array($name, ['period', 'period_date', 'periode', 'period_dt', 'perioddate'], true);
+        });
         if (!$periodColumnRule) {
-            $periodColumnRule = $mapping->columns->first(function ($col) {
-                $name = strtolower($col->table_column_name);
-                return in_array($name, ['period', 'periode', 'period_dt', 'perioddate',], true);
-            });
+            return response()->json(['success' => false, 'message' => 'Format ini belum memiliki mapping untuk kolom period.'], 422);
         }
-        if (!$periodColumnRule) {
-            return response()->json(['success' => false, 'message' => 'Format ini belum memiliki mapping untuk kolom period_date.'], 422);
-        }
-        $periodExcelColIndex = $this->columnLetterToIndex($periodColumnRule->excel_column_index);
+        $periodColumnName = $periodColumnRule->table_column_name;
 
-        // 4. PEEK: Read File to Detect Period
+        // 4. Load file (period will follow user selection)
         $file = $request->file('data_file');
         $reader = IOFactory::createReaderForFile($file->getPathname());
         $reader->setReadDataOnly(true);
@@ -2445,21 +2501,12 @@ class MappingController extends Controller
         $headerRow = max(1, (int) $mapping->header_row);
         $dataStartRow = $headerRow + 1;
 
-        // Read first data row to get the date
-        $firstDataRow = $sheet->rangeToArray("A{$dataStartRow}:AZ{$dataStartRow}", null, true, true, false);
-        
-        if (empty($firstDataRow)) {
-            return response()->json(['success' => false, 'message' => 'File kosong.'], 422);
+        // Period comes from user input; normalize to Y-m-d with the same parsing used for Excel values
+        $periodDate = $this->convertExcelDate($validated['period_date']);
+        if (!$periodDate || !preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $periodDate)) {
+            return response()->json(['success' => false, 'message' => 'Tanggal periode tidak valid.'], 422);
         }
-
-        $rawPeriodValue = $firstDataRow[0][$periodExcelColIndex] ?? null;
-        $periodDate = $this->convertExcelDate($rawPeriodValue);
-
-        if (!$periodDate) {
-            return response()->json(['success' => false, 'message' => "Gagal mendeteksi tanggal valid di kolom {$periodColumnRule->excel_column_index} (Value: {$rawPeriodValue})."], 422);
-        }
-
-        Log::info("Strict Mode: Detected Period {$periodDate} from file.");
+        Log::info("Strict Mode: Using Period {$periodDate} (user selected)");
 
         // 5. VERSIONING: Start New Run & Create Temp Table
         $run = $uploadIndexService->beginRun($mapping->id, Auth::id(), $periodDate);
@@ -2490,21 +2537,40 @@ class MappingController extends Controller
                     $val = $rowValues[$excelCol] ?? null;
                     if ($val !== null && $val !== '') $hasValue = true;
 
-                    if (in_array($dbCol, ['period_date', 'period', 'periode', 'period_dt', 'perioddate'], true)) {
+                    if (in_array($dbCol, ['period', 'period_date', 'periode', 'period_dt', 'perioddate'], true)) {
                         $val = $this->convertExcelDate($val);
+                        // Skip rows whose period is different from the selected period
+                        if ($val && $val !== $periodDate) {
+                            continue 2; // skip this row entirely
+                        }
+                        // Fill empty/null period with selected period
+                        if (!$val) {
+                            $val = $periodDate;
+                        }
                     }
                     $record[$dbCol] = $val;
                 }
 
                 if (!$hasValue) continue;
 
-                $record['period_date'] = $periodDate;
+                $record[$periodColumnName] = $periodDate;
                 $record['upload_index'] = $uploadIndex;
                 $record['is_active'] = 1;
                 $record['created_at'] = $timestamp;
                 $record['updated_at'] = $timestamp;
 
                 $rowsToInsert[] = $record;
+            }
+
+            if (empty($rowsToInsert)) {
+                $connectionInstance->rollBack();
+                $uploadIndexService->failRun($run, 'Tidak ada baris yang cocok dengan periode yang dipilih.');
+                Schema::connection($connection)->dropIfExists($targetTableName);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada baris yang sesuai dengan periode yang dipilih.'
+                ], 422);
             }
 
             foreach (array_chunk($rowsToInsert, $batchSize) as $chunk) {
