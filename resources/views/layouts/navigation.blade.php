@@ -50,7 +50,7 @@
                         </a>
                     @endif
 
-                    @can('register format')
+                    @can('create format')
                         <a href="{{ route('mapping.register.form') }}" class="inline-flex items-center px-1 pt-1 border-b-2 {{ request()->routeIs('mapping.*') ? 'border-[#0057b7] text-[#0f172a]' : 'border-transparent text-gray-500 hover:text-[#0f172a] hover:border-[#c7d9f3]' }} text-sm font-medium leading-5 focus:outline-none focus:border-[#004a99] transition duration-150 ease-in-out">
                             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
@@ -170,7 +170,7 @@
                 </a>
             @endif
 
-            @can('register format')
+            @can('create format')
                 <a href="{{ route('mapping.register.form') }}" class="block pl-3 pr-4 py-2 border-l-4 {{ request()->routeIs('mapping.*') ? 'border-[#0057b7] text-[#004a99] bg-[#e8f1fb]' : 'border-transparent text-gray-600 hover:text-[#0f172a] hover:bg-[#eef4fc] hover:border-[#c7d9f3]' }} text-base font-medium transition duration-150 ease-in-out">
                     {{ __('Register Format') }}
                 </a>

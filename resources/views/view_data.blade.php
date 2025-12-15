@@ -237,13 +237,22 @@
 </div>
 
 <!-- Export Modal -->
+@php
+    $exportPeriods = collect(range(0, 11))->map(function ($i) {
+        $dt = \Carbon\Carbon::now()->subMonths($i)->startOfMonth();
+        return [
+            'value' => $dt->toDateString(),
+            'label' => $dt->translatedFormat('F Y'),
+        ];
+    });
+@endphp
 <div id="exportModal" class="fixed inset-0 z-50 hidden items-center justify-center">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
         <div class="flex items-start justify-between mb-4">
             <div>
                 <h3 class="text-xl font-bold text-gray-900" id="exportModalTitle">Export Data</h3>
-                <p class="text-sm text-gray-600 mt-1">Silakan pilih periode data yang ingin diexport.</p>
+                <p class="text-sm text-gray-600 mt-1">Pilih periode (tanggal selalu 1).</p>
             </div>
             <button type="button" id="btn-export-close" class="text-gray-500 hover:text-gray-800">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -254,9 +263,12 @@
         <form id="exportForm" method="GET">
             <div class="mb-4">
                 <label class="block text-sm font-semibold text-gray-800 mb-1">Periode</label>
-                <input type="date" name="period_date" required
-                       class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
-                <p class="text-xs text-gray-500 mt-1">Pilih tanggal periode (biasanya tanggal 1 bulan tersebut).</p>
+                <select name="period_date" class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
+                    @foreach($exportPeriods as $opt)
+                        <option value="{{ $opt['value'] }}">{{ $opt['label'] }} ({{ $opt['value'] }})</option>
+                    @endforeach
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Opsi sudah otomatis tanggal 1 setiap bulan.</p>
             </div>
             <div class="flex items-center justify-end space-x-3">
                 <button type="button" id="btn-export-cancel" class="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">Batal</button>

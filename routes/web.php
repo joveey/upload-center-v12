@@ -74,6 +74,14 @@ Route::middleware('auth')->group(function () {
             ->name('mapping.register.headers');
     });
 
+    // Edit format routes
+    Route::middleware('can:update format')->group(function () {
+        Route::get('/mapping/{mapping}/edit', [MappingController::class, 'edit'])
+            ->name('mapping.edit');
+        Route::put('/mapping/{mapping}', [MappingController::class, 'update'])
+            ->name('mapping.update');
+    });
+
     Route::get('/formats', [MappingController::class, 'index'])
         ->name('formats.index');
 

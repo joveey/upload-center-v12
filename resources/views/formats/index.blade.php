@@ -238,10 +238,10 @@
                                 </div>
                             @endif
 
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div class="grid grid-cols-2 sm:grid-cols-2 gap-3">
                                 @can('view data')
                                     <a href="{{ route('mapping.view.data', $mapping->id) }}" 
-                                       class="inline-flex items-center justify-center px-4 py-3 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                       class="inline-flex items-center justify-center px-4 py-3 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group w-full">
                                         <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
@@ -249,24 +249,36 @@
                                         Lihat
                                     </a>
                                 @endcan
+                                @can('export data')
+                                    <button type="button"
+                                            onclick="openExportModal('{{ route('export.data', $mapping->id) }}', '{{ $mapping->description }}')"
+                                            class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group w-full">
+                                        <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                        </svg>
+                                        Export
+                                    </button>
+                                @endcan
+                            </div>
+
+                            <div class="grid grid-cols-2 sm:grid-cols-2 gap-3 mt-3">
                                 @can('download template')
                                     <a href="{{ route('export.template', $mapping->id) }}" 
-                                       class="inline-flex items-center justify-center px-4 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-800 uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/30 transition-all duration-200 shadow-md hover:shadow-lg group">
+                                       class="inline-flex items-center justify-center px-4 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-800 uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/30 transition-all duration-200 shadow-md hover:shadow-lg group w-full">
                                         <svg class="w-4 h-4 mr-2 text-[#0057b7] group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m0 0l-4-4m4 4l4-4M4 8h16"></path>
                                         </svg>
                                         Template
                                     </a>
                                 @endcan
-                                @can('export data')
-                                    <button type="button"
-                                            onclick="openExportModal('{{ route('export.data', $mapping->id) }}', '{{ $mapping->description }}')"
-                                            class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group">
-                                        <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                @can('update format')
+                                    <a href="{{ route('mapping.edit', $mapping->id) }}"
+                                       class="inline-flex items-center justify-center px-4 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-800 uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/30 transition-all duration-200 shadow-md hover:shadow-lg group w-full">
+                                        <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2m-6 8h2m2 0h2m2 0h2m-8 4h8a2 2 0 002-2V7a2 2 0 00-2-2h-6l-2-2H7a2 2 0 00-2 2v3"></path>
                                         </svg>
-                                        Export
-                                    </button>
+                                        Edit Format
+                                    </a>
                                 @endcan
                             </div>
 
@@ -357,13 +369,22 @@
 </x-app-layout>
 
 <!-- Export Modal -->
+@php
+    $exportPeriods = collect(range(0, 11))->map(function ($i) {
+        $dt = \Carbon\Carbon::now()->subMonths($i)->startOfMonth();
+        return [
+            'value' => $dt->toDateString(),
+            'label' => $dt->translatedFormat('F Y'),
+        ];
+    });
+@endphp
 <div id="exportModal" class="fixed inset-0 z-50 hidden items-center justify-center">
     <div class="absolute inset-0 bg-black/50"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
         <div class="flex items-start justify-between mb-4">
             <div>
                 <h3 class="text-xl font-bold text-gray-900" id="exportModalTitle">Export Data</h3>
-                <p class="text-sm text-gray-600 mt-1">Silakan pilih periode data yang ingin diexport.</p>
+                <p class="text-sm text-gray-600 mt-1">Pilih periode (tanggal selalu 1).</p>
             </div>
             <button type="button" id="btn-export-close" class="text-gray-500 hover:text-gray-800">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -374,9 +395,12 @@
         <form id="exportForm" method="GET">
             <div class="mb-4">
                 <label class="block text-sm font-semibold text-gray-800 mb-1">Periode</label>
-                <input type="date" name="period_date" required
-                       class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
-                <p class="text-xs text-gray-500 mt-1">Pilih tanggal periode (biasanya tanggal 1 bulan tersebut).</p>
+                <select name="period_date" class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
+                    @foreach($exportPeriods as $opt)
+                        <option value="{{ $opt['value'] }}">{{ $opt['label'] }} ({{ $opt['value'] }})</option>
+                    @endforeach
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Opsi sudah otomatis tanggal 1 setiap bulan.</p>
             </div>
             <div class="flex items-center justify-end space-x-3">
                 <button type="button" id="btn-export-cancel" class="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">Batal</button>

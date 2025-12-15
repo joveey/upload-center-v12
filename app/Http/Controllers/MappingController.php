@@ -265,6 +265,119 @@ class MappingController extends Controller
     }
 
     /**
+     * Form edit format (tambah kolom / ubah header row).
+     */
+    public function edit(MappingIndex $mapping): View
+    {
+        $mapping->load('columns');
+
+        return view('formats.edit', [
+            'mapping' => $mapping,
+            'columns' => $mapping->columns
+                ->sortBy(fn($col) => $this->columnLetterToIndex($col->excel_column_index))
+                ->values(),
+        ]);
+    }
+
+    /**
+     * Update format: tambah kolom baru + update header row.
+     */
+    public function update(Request $request, MappingIndex $mapping): RedirectResponse
+    {
+        $mapping->load('columns');
+
+        $normalizedColumns = collect($request->input('columns', []))
+            ->map(function ($col) {
+                return [
+                    'database_column' => strtolower(trim($col['database_column'] ?? '')),
+                    'is_unique_key' => $col['is_unique_key'] ?? null,
+                ];
+            })
+            ->filter(fn($col) => $col['database_column'] !== '')
+            ->values();
+
+        $request->merge(['columns' => $normalizedColumns->all()]);
+
+        $validated = $request->validate([
+            'header_row' => ['required', 'integer', 'min:1'],
+            'columns' => ['nullable', 'array'],
+            'columns.*.database_column' => ['required_with:columns', 'string', 'regex:/^[a-z0-9_]+$/'],
+            'columns.*.is_unique_key' => ['nullable', 'in:0,1,true,false'],
+        ], [
+            'columns.*.database_column.regex' => 'Nama kolom hanya boleh berisi huruf kecil, angka, dan underscore (_).',
+        ]);
+
+        $existingDb = $mapping->columns->pluck('table_column_name')->map(fn($v) => strtolower($v));
+
+        // Cek duplikasi di input baru
+        $newDb = $normalizedColumns->pluck('database_column');
+        if ($newDb->duplicates()->isNotEmpty()) {
+            return back()->withInput()->with('error', 'Kolom Database yang baru tidak boleh duplikat.');
+        }
+        if ($newDb->intersect($existingDb)->isNotEmpty()) {
+            return back()->withInput()->with('error', 'Kolom baru bertabrakan dengan kolom yang sudah ada.');
+        }
+
+        $reserved = ['id', 'period_date', 'upload_index', 'created_at', 'updated_at', 'is_active', 'division_id'];
+        if ($newDb->intersect($reserved)->isNotEmpty()) {
+            return back()->withInput()->with('error', 'Nama kolom yang dipilih termasuk kolom terlarang.');
+        }
+
+        $connection = $mapping->target_connection
+            ?? $mapping->connection
+            ?? config('database.default');
+        $baseTable = $mapping->table_name;
+        if (!Schema::connection($connection)->hasTable($baseTable) && Schema::connection('sqlsrv_legacy')->hasTable($baseTable)) {
+            $connection = 'sqlsrv_legacy';
+        }
+
+        DB::beginTransaction();
+        try {
+            // Update header row
+            if ((int) $mapping->header_row !== (int) $validated['header_row']) {
+                $mapping->header_row = (int) $validated['header_row'];
+                $mapping->save();
+            }
+
+            // Tambah kolom baru (DB + mapping)
+            $maxExistingIndex = $mapping->columns
+                ->map(fn($col) => $this->columnLetterToIndex($col->excel_column_index))
+                ->max();
+            $nextIndex = is_null($maxExistingIndex) ? -1 : (int) $maxExistingIndex;
+
+            foreach ($normalizedColumns as $col) {
+                $isUnique = in_array($col['is_unique_key'], ['1', 1, true, 'true'], true);
+                $this->addColumnToAllTables($baseTable, $connection, $col['database_column'], $isUnique);
+
+                $nextIndex++;
+                $excelCol = $this->indexToColumn($nextIndex);
+
+                MappingColumn::create([
+                    'mapping_index_id' => $mapping->id,
+                    'excel_column_index' => $excelCol,
+                    'table_column_name' => $col['database_column'],
+                    'data_type' => 'string',
+                    'is_required' => false,
+                    'is_unique_key' => $isUnique,
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()
+                ->route('mapping.edit', $mapping->id)
+                ->with('success', 'Format berhasil diperbarui. Kolom baru siap dipakai untuk upload berikutnya.');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('Gagal mengupdate format', [
+                'mapping_id' => $mapping->id,
+                'error' => $e->getMessage(),
+            ]);
+            return back()->withInput()->with('error', 'Gagal memperbarui format: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * View data from a specific format/mapping table
      */
     public function viewData($mappingId): View|RedirectResponse
@@ -1408,6 +1521,70 @@ class MappingController extends Controller
                 ->route('formats.index')
                 ->with('error', 'Gagal menghapus format: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Tambahkan kolom baru ke tabel utama + semua tabel versi strict yang sudah ada.
+     */
+    private function addColumnToAllTables(string $baseTable, string $connection, string $columnName, bool $isUniqueKey = false): void
+    {
+        $tables = array_merge([$baseTable], $this->getVersionTables($baseTable, $connection));
+        foreach ($tables as $table) {
+            $this->addColumnIfMissing($table, $connection, $columnName, $isUniqueKey);
+        }
+    }
+
+    /**
+     * Ambil daftar tabel versi strict (nama mirip base__p...__i...).
+     */
+    private function getVersionTables(string $baseTable, string $connection): array
+    {
+        $conn = DB::connection($connection);
+        $driver = $conn->getDriverName();
+        $likePattern = $baseTable . '__p%__i%';
+
+        try {
+            if ($driver === 'sqlsrv') {
+                $rows = $conn->select("SELECT name FROM sys.tables WHERE name LIKE ?", [$likePattern]);
+                return collect($rows)->pluck('name')->all();
+            }
+            if ($driver === 'mysql') {
+                $rows = $conn->select("SHOW TABLES LIKE ?", [$likePattern]);
+                return collect($rows)->map(function ($row) {
+                    return array_values((array) $row)[0] ?? null;
+                })->filter()->all();
+            }
+            if ($driver === 'pgsql') {
+                $rows = $conn->select("SELECT tablename FROM pg_tables WHERE tablename ILIKE ?", [$likePattern]);
+                return collect($rows)->pluck('tablename')->all();
+            }
+        } catch (\Throwable $e) {
+            Log::warning("Gagal mendapatkan daftar tabel versi strict: " . $e->getMessage());
+        }
+
+        return [];
+    }
+
+    /**
+     * Tambah kolom jika belum ada pada tabel tertentu.
+     */
+    private function addColumnIfMissing(string $tableName, string $connection, string $columnName, bool $isUniqueKey = false): void
+    {
+        $schema = Schema::connection($connection);
+        if (! $schema->hasTable($tableName)) {
+            return;
+        }
+        if ($schema->hasColumn($tableName, $columnName)) {
+            return;
+        }
+
+        $schema->table($tableName, function (Blueprint $table) use ($columnName, $isUniqueKey) {
+            if ($isUniqueKey) {
+                $table->string($columnName, 450)->nullable();
+            } else {
+                $table->text($columnName)->nullable();
+            }
+        });
     }
 
     /**

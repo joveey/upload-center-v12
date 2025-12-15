@@ -21,7 +21,7 @@
             </p>
         </div>  
     </div>
-    @can('register format')
+    @can('create format')
         <a href="{{ route('mapping.register.form') }}">
             <button class="inline-flex items-center px-5 py-2.5 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm">
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -535,7 +535,7 @@
                             items.push(`<button type="button" data-id="${item.id}" class="mapping-option w-full text-left px-3 py-2 hover:bg-[#f4f8fd]">${item.label}</button>`);
                         }
                     });
-                    @can('register format')
+                    @can('create format')
                         items.push('<button type="button" data-id="__create__" class="mapping-option w-full text-left px-3 py-2 hover:bg-[#f4f8fd] text-[#0057b7] font-semibold">+ Tambah format baru</button>');
                     @endcan
                     mappingDropdown.innerHTML = items.join('') || '<div class="px-3 py-2 text-sm text-gray-500">Tidak ada hasil</div>';
@@ -935,7 +935,6 @@
     </style>
     @endpush
 </x-app-layout>
-
 
 
 

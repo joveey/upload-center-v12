@@ -22,6 +22,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $permissions = [
             'manage users',
             'create format',
+            'update format',
             'delete format',
             'upload data',
             'download template',
@@ -43,6 +44,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => $guard]);
         $admin->syncPermissions([
             'create format',
+            'update format',
             'delete format',
             'upload data',
             'view data',
@@ -54,6 +56,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $user->syncPermissions([
             'upload data',
             'download template',
+            'view data',
         ]);
 
         $viewer = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => $guard]);

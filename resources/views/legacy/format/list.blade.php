@@ -84,7 +84,7 @@
                                                     Buka
                                                 </a>
                                             @else
-                                                @can('register format')
+                                                @can('create format')
                                                     <form action="{{ route('legacy.format.quick-map') }}" method="POST" class="inline">
                                                         @csrf
                                                         <input type="hidden" name="table_name" value="{{ $mapping->table_name }}">
@@ -93,7 +93,7 @@
                                                         </button>
                                                     </form>
                                                 @else
-                                                    <span class="text-xs text-gray-500">Butuh izin register format</span>
+                                                    <span class="text-xs text-gray-500">Butuh izin buat format</span>
                                                 @endcan
                                             @endif
                                         </td>
