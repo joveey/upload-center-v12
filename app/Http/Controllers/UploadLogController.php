@@ -17,7 +17,10 @@ class UploadLogController extends Controller
         $selectedUserId = $request->input('user_id');
         $perPage = 20;
 
-        $isAdmin = $this->userHasRole($user, 'super-admin') || optional($user->division)->is_super_user;
+        $isAdmin = $this->userHasRole($user, 'superuser')
+            || $this->userHasRole($user, 'admin')
+            || $this->userHasRole($user, 'super-admin') // backward compat
+            || optional($user->division)->is_super_user;
 
         $query = UploadLog::with(['mappingIndex', 'division', 'user'])
             ->orderByDesc('created_at');
