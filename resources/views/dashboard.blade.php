@@ -270,6 +270,7 @@
                                 <option value="strict">Strict (replace period)</option>
                                 <option value="upsert">Upsert (gabung kunci unik)</option>
                             </select>
+                            <p id="upload_mode_direct_hint" class="text-xs text-gray-500"></p>
                             <button type="button" id="directUploadButton" class="mt-2 w-full inline-flex justify-center items-center px-5 py-3 bg-green-600 hover:bg-green-700 border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
@@ -419,17 +420,17 @@
 
     {{-- Modal Period Date for Strict mode --}}
     <div id="periodDateModal" class="hidden fixed inset-0 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center z-50">
-        <div class="bg-white rounded-2xl shadow-2xl p-6 w-96 border border-gray-200">
-            <div class="flex items-center justify-between mb-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 w-[360px] border border-gray-200">
+            <div class="flex items-start justify-between mb-4">
                 <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-xl bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
+                    <div class="w-11 h-11 rounded-xl bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-7 4h4M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                         </svg>
                     </div>
                     <div>
-                        <p class="text-sm font-semibold text-gray-900">Pilih Period Date</p>
-                        <p class="text-xs text-gray-600">Wajib untuk upload mode strict</p>
+                        <p class="text-base font-semibold text-gray-900">Pilih Period Date</p>
+                        <p class="text-xs text-gray-500">Wajib untuk upload mode strict</p>
                     </div>
                 </div>
                 <button id="cancelPeriod" class="text-gray-400 hover:text-gray-600">
@@ -438,18 +439,30 @@
                     </svg>
                 </button>
             </div>
-            <div class="space-y-4">
-                <label class="block text-sm font-medium text-gray-700">Period Date</label>
-                <input type="date" id="period_date_picker" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30" />
-                <p class="text-xs text-gray-500">Gunakan tanggal awal bulan (contoh: 2025-01-01).</p>
+            <div class="space-y-3">
+                <label class="block text-sm font-semibold text-gray-800">Period Date</label>
+                <div class="relative">
+                    <input type="text" id="period_date_picker" placeholder="YYYY-MM-DD" pattern="\\d{4}-\\d{2}-\\d{2}" inputmode="numeric" class="w-full rounded-xl border border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 text-sm px-3 py-2.5 font-mono" />
+                </div>
+                <p class="text-xs text-gray-500">Gunakan format YYYY-MM-DD (contoh: 2025-01-01).</p>
             </div>
-            <div class="flex justify-end space-x-3 mt-6">
-                <button id="confirmPeriod" class="px-4 py-2 bg-[#0057b7] text-white rounded-lg shadow hover:bg-[#004a99] focus:outline-none focus:ring-2 focus:ring-[#0057b7]/50">Simpan</button>
+            <div class="flex justify-end mt-6">
+                <button id="confirmPeriod" class="px-5 py-2.5 bg-[#0057b7] text-white rounded-xl shadow hover:bg-[#004a99] focus:outline-none focus:ring-2 focus:ring-[#0057b7]/50 text-sm font-semibold">Simpan</button>
             </div>
         </div>
     </div>
 
     @push('scripts')
+    @php
+        $mappingDataForJs = $mappings->map(function($m) {
+            return [
+                'id' => $m->id,
+                'label' => $m->description ?? $m->code,
+                'template' => route('export.template', $m->id),
+                'upload_mode' => $m->upload_mode,
+            ];
+        });
+    @endphp
     <script>
         let previewData = null;
         let currentSheetName = null;
@@ -463,15 +476,43 @@
             const mappingCombo = document.getElementById('mapping_search_combo');
             const mappingHidden = document.getElementById('mapping_id_hidden');
             const mappingDropdown = document.getElementById('mapping_dropdown');
-            const mappingData = @json($mappings->map(function($m){ return ['id'=>$m->id, 'label'=>$m->description ?? $m->code]; }));
+            const mappingData = @json($mappingDataForJs);
             const createFormatUrl = '{{ route("mapping.register.form") }}';
             const directUploadButton = document.getElementById('directUploadButton');
             const uploadModeDirect = document.getElementById('upload_mode_direct');
+            const uploadModeDirectHint = document.getElementById('upload_mode_direct_hint');
             const periodModal = document.getElementById('periodDateModal');
             const periodInput = document.getElementById('period_date_input');
             const periodPicker = document.getElementById('period_date_picker');
             const confirmPeriod = document.getElementById('confirmPeriod');
             const cancelPeriod = document.getElementById('cancelPeriod');
+            let lockedUploadMode = '';
+
+            function applyPresetUploadMode(presetMode) {
+                lockedUploadMode = presetMode || '';
+
+                if (uploadModeDirect) {
+                    if (lockedUploadMode) {
+                        uploadModeDirect.value = lockedUploadMode;
+                        uploadModeDirect.disabled = true;
+                        uploadModeDirect.classList.add('bg-gray-100', 'cursor-not-allowed');
+                        if (uploadModeDirectHint) {
+                            const label = lockedUploadMode === 'strict'
+                                ? 'Strict (replace period)'
+                                : 'Upsert (update/insert)';
+                            uploadModeDirectHint.textContent = `Mode upload dikunci ke ${label} untuk format ini.`;
+                            uploadModeDirectHint.classList.remove('hidden');
+                        }
+                    } else {
+                        uploadModeDirect.disabled = false;
+                        uploadModeDirect.classList.remove('bg-gray-100', 'cursor-not-allowed');
+                        if (uploadModeDirectHint) {
+                            uploadModeDirectHint.textContent = 'Pilih mode upload untuk pengiriman langsung.';
+                            uploadModeDirectHint.classList.remove('hidden');
+                        }
+                    }
+                }
+            }
 
             function openPeriodModal(callback) {
                 pendingSubmit = callback;
@@ -495,11 +536,13 @@
 
             confirmPeriod.addEventListener('click', (e) => {
                 e.preventDefault();
-                if (!periodPicker.value) {
-                    alert('Pilih period date.');
+                const val = (periodPicker.value || '').trim();
+                const isoPattern = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+                if (!val || !isoPattern.test(val)) {
+                    alert('Gunakan format YYYY-MM-DD.');
                     return;
                 }
-                periodInput.value = periodPicker.value;
+                periodInput.value = val;
                 periodModal.classList.add('hidden');
                 if (pendingSubmit) {
                     const fn = pendingSubmit;
@@ -513,6 +556,8 @@
                 periodModal.classList.add('hidden');
                 pendingSubmit = null;
             });
+
+            applyPresetUploadMode('');
             
             // Handle file input change
             fileInput.addEventListener('change', function() {
@@ -532,7 +577,17 @@
                     const q = term.toLowerCase();
                     mappingData.forEach(item => {
                         if (q === '' || item.label.toLowerCase().includes(q)) {
-                            items.push(`<button type="button" data-id="${item.id}" class="mapping-option w-full text-left px-3 py-2 hover:bg-[#f4f8fd]">${item.label}</button>`);
+                            @can('download template')
+                                const templateBtn = `<a href="${item.template}" target="_blank" class="mapping-template-link text-xs text-[#0057b7] font-semibold underline hover:text-[#004a99]">Template</a>`;
+                            @else
+                                const templateBtn = '';
+                            @endcan
+                            items.push(
+                                `<div data-id="${item.id}" class="mapping-option w-full px-3 py-2 hover:bg-[#f4f8fd] flex items-center justify-between gap-3">
+                                    <span class="text-left truncate">${item.label}</span>
+                                    ${templateBtn}
+                                </div>`
+                            );
                         }
                     });
                     @can('create format')
@@ -558,17 +613,23 @@
                     showDropdown();
                 });
 
-                mappingDropdown.addEventListener('mousedown', (e) => {
+                mappingDropdown.addEventListener('click', (e) => {
+                    if (e.target.closest('.mapping-template-link')) {
+                        e.stopPropagation();
+                        return;
+                    }
                     const btn = e.target.closest('.mapping-option');
                     if (!btn) return;
                     const id = btn.dataset.id;
-                    const label = btn.textContent.trim();
+                    const label = btn.querySelector('span')?.textContent?.trim() || btn.textContent.trim();
                     if (id === '__create__') {
                         window.location.href = createFormatUrl;
                         return;
                     }
+                    const selectedMapping = mappingData.find(item => String(item.id) === String(id));
                     mappingHidden.value = id;
                     mappingCombo.value = label;
+                    applyPresetUploadMode(selectedMapping?.upload_mode || '');
                 });
 
                 mappingCombo.addEventListener('blur', hideDropdown);
@@ -795,11 +856,12 @@
 
                 // Get upload mode
                 const uploadModeInput = document.querySelector('input[name="upload_mode"]:checked');
-                if (!uploadModeInput) {
+                const uploadModeLocked = document.querySelector('input[name="upload_mode"][type="hidden"]');
+                const uploadMode = uploadModeInput?.value || uploadModeLocked?.value || lockedUploadMode;
+                if (!uploadMode) {
                     alert('Pilih mode upload');
                     return;
                 }
-                const uploadMode = uploadModeInput.value;
 
                 const submitUpload = () => {
                     const formData = new FormData(form);
@@ -843,8 +905,16 @@
             });
             // ===== END: INTEGRATED CODE =====
 
-            closeModal.addEventListener('click', () => modal.classList.add('hidden'));
-            closeModalX.addEventListener('click', () => modal.classList.add('hidden'));
+            closeModal.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                modal.classList.add('hidden');
+            });
+            closeModalX.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                modal.classList.add('hidden');
+            });
 
             // Direct upload handler (skips preview)
             if (directUploadButton) {
@@ -858,7 +928,7 @@
                         alert('Pilih file terlebih dahulu');
                         return;
                     }
-                    const uploadMode = uploadModeDirect?.value || 'strict';
+                    const uploadMode = lockedUploadMode || uploadModeDirect?.value || 'strict';
 
                     const submitDirect = () => {
                         const formData = new FormData(form);
@@ -935,8 +1005,3 @@
     </style>
     @endpush
 </x-app-layout>
-
-
-
-
-

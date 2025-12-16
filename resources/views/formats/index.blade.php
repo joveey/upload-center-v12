@@ -153,210 +153,101 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                @forelse($mappings as $mapping)
-                    {{-- Diubah: Border hover kartu --}}
-                    <div class="bg-white overflow-hidden shadow-lg rounded-2xl border border-gray-100 hover:shadow-2xl hover:border-[#9cbce8] transition-all duration-300 transform hover:-translate-y-1">
-                        {{-- Diubah: Gradient header kartu --}}
-                        <div class="bg-gradient-to-r from-[#0057b7] to-[#004a99] px-6 py-4">
-                            <div class="flex items-start justify-between">
-                                <div class="flex-1">
-                                    <h3 class="text-lg font-bold text-white truncate" title="{{ $mapping->description }}">
-                                        {{ $mapping->description ?? $mapping->code }}
-                                    </h3>
-                                    {{-- Diubah: Warna teks subjudul --}}
-                                    <p class="text-sm text-[#d8e7f7] mt-1">
-                                        {{ $mapping->columns->count() }} kolom • {{ number_format($mapping->row_count) }} baris
-                                    </p>
-                                    <p class="text-xs text-[#d8e7f7] mt-1">
-                                        Dibuat oleh: {{ $mapping->is_legacy_source ? 'Legacy' : (optional($mapping->division)->name ?? 'Legacy') }}
-                                    </p>
-                                </div>
-                                <div class="flex-shrink-0 ml-3">
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-white/20 text-white backdrop-blur-sm">
-                                        {{ $mapping->code }}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="p-6">
-                            <div class="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                <div class="flex items-center text-sm">
-                                    {{-- Diubah: Warna ikon info tabel --}}
-                                    <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"></path>
-                                        <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"></path>
-                                        <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"></path>
-                                    </svg>
-                                    <span class="font-semibold text-gray-700">Tabel:</span>
-                                    <span class="ml-2 text-gray-600 font-mono text-xs">{{ $mapping->table_name }}</span>
-                                </div>
-                                <div class="flex items-center text-sm mt-2">
-                                    {{-- Diubah: Warna ikon info header row --}}
-                                    <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path>
-                                    </svg>
-                                    <span class="font-semibold text-gray-700">Header Row:</span>
-                                    <span class="ml-2 text-gray-600">Baris {{ $mapping->header_row }}</span>
-                                </div>
-                            </div>
-
-                            <div class="mb-4">
-                                <p class="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Kolom Database:</p>
-                                <div class="flex flex-wrap gap-1.5">
-                                    @foreach($mapping->columns->take(6) as $col)
-                                        {{-- Diubah: Warna badge kolom --}}
-                                        <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-[#e0ebf9] text-[#004a99]">
-                                            {{ $col->excel_column_index }}: {{ $col->table_column_name }}
+            <div class="bg-white border border-gray-200 shadow-md rounded-xl overflow-hidden">
+                <div class="bg-gradient-to-r from-[#0057b7] to-[#0077d9] text-white px-6 py-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-semibold">Daftar Format</p>
+                        <p class="text-xs text-white/80">Tabel daftar format (tabel ter-register).</p>
+                    </div>
+                    <span class="text-xs text-white/80">Total: {{ $mappings instanceof \Illuminate\Pagination\LengthAwarePaginator ? $mappings->total() : $mappings->count() }}</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50 text-gray-700 font-semibold border-b border-gray-200">
+                            <tr>
+                                <th class="px-6 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Format & Info</th>
+                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Kode</th>
+                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Tabel</th>
+                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Kolom</th>
+                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Baris</th>
+                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Header</th>
+                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Divisi</th>
+                                <th class="px-6 py-3 text-right uppercase tracking-wide text-xs text-gray-500">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-100 text-gray-800">
+                            @forelse($mappings as $mapping)
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-3">
+                                        <div class="font-semibold text-gray-900">{{ $mapping->description ?? $mapping->code }}</div>
+                                        <div class="text-xs text-gray-500 mt-1">Dibuat oleh: {{ $mapping->is_legacy_source ? 'Legacy' : (optional($mapping->division)->name ?? 'Legacy') }}</div>
+                                    </td>
+                                    <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ $mapping->code }}</td>
+                                    <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ $mapping->table_name }}</td>
+                                    <td class="px-4 py-3">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs">
+                                            {{ $mapping->columns->count() }} kolom
                                         </span>
-                                    @endforeach
-                                    @if($mapping->columns->count() > 6)
-                                        <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-200 text-gray-700">
-                                            +{{ $mapping->columns->count() - 6 }} lagi
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 text-xs">
+                                            {{ number_format($mapping->row_count) }} baris
                                         </span>
-                                    @endif
-                                </div>
-                            </div>
-
-                            @php
-                                $uniqueKeys = $mapping->columns->where('is_unique_key', true);
-                            @endphp
-                            @if($uniqueKeys->count() > 0)
-                                <div class="mb-4 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                                    <div class="flex items-start">
-                                        <svg class="w-4 h-4 text-amber-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"></path>
-                                        </svg>
-                                        <div class="flex-1">
-                                            <p class="text-xs font-semibold text-amber-800">Unique Keys:</p>
-                                            <p class="text-xs text-amber-700 mt-1">
-                                                {{ $uniqueKeys->pluck('table_column_name')->implode(', ') }}
-                                            </p>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200 text-xs">
+                                            Baris {{ $mapping->header_row }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full {{ $mapping->is_legacy_source ? 'bg-yellow-50 text-yellow-800 border border-yellow-100' : 'bg-sky-50 text-sky-800 border border-sky-100' }} text-xs">
+                                            {{ $mapping->is_legacy_source ? 'Legacy' : (optional($mapping->division)->name ?? '-') }}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-3">
+                                        <div class="flex items-center justify-end gap-2 flex-wrap">
+                                            @can('view data')
+                                                <a href="{{ route('mapping.view.data', $mapping->id) }}"
+                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#0057b7] text-white text-xs font-semibold hover:bg-[#004a99]">
+                                                    Lihat
+                                                </a>
+                                            @endcan
+                                            @can('download template')
+                                                <a href="{{ route('export.template', $mapping->id) }}"
+                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-800 hover:bg-gray-50">
+                                                    Template
+                                                </a>
+                                            @endcan
                                         </div>
-                                    </div>
-                                </div>
-                            @endif
-
-                            <div class="grid grid-cols-2 sm:grid-cols-2 gap-3">
-                                @can('view data')
-                                    <a href="{{ route('mapping.view.data', $mapping->id) }}" 
-                                       class="inline-flex items-center justify-center px-4 py-3 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group w-full">
-                                        <svg class="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                                        </svg>
-                                        Lihat
-                                    </a>
-                                @endcan
-                                @can('export data')
-                                    <button type="button"
-                                            onclick="openExportModal('{{ route('export.data', $mapping->id) }}', '{{ $mapping->description }}')"
-                                            class="inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/40 transition-all duration-200 shadow-md hover:shadow-lg group w-full">
-                                        <svg class="w-4 h-4 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                                        </svg>
-                                        Export
-                                    </button>
-                                @endcan
-                            </div>
-
-                            <div class="grid grid-cols-2 sm:grid-cols-2 gap-3 mt-3">
-                                @can('download template')
-                                    <a href="{{ route('export.template', $mapping->id) }}" 
-                                       class="inline-flex items-center justify-center px-4 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-800 uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/30 transition-all duration-200 shadow-md hover:shadow-lg group w-full">
-                                        <svg class="w-4 h-4 mr-2 text-[#0057b7] group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m0 0l-4-4m4 4l4-4M4 8h16"></path>
-                                        </svg>
-                                        Template
-                                    </a>
-                                @endcan
-                                @can('update format')
-                                    <a href="{{ route('mapping.edit', $mapping->id) }}"
-                                       class="inline-flex items-center justify-center px-4 py-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm text-gray-800 uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0057b7]/30 transition-all duration-200 shadow-md hover:shadow-lg group w-full">
-                                        <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2m-6 8h2m2 0h2m2 0h2m-8 4h8a2 2 0 002-2V7a2 2 0 00-2-2h-6l-2-2H7a2 2 0 00-2 2v3"></path>
-                                        </svg>
-                                        Edit Format
-                                    </a>
-                                @endcan
-                            </div>
-
-                            @can('delete format')
-                                <div class="mt-4 rounded-2xl border border-amber-100 bg-gradient-to-br from-[#fff7ed] via-[#fff3e6] to-[#ffe8dc] p-4 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)] space-y-4">
-                                    <div class="flex items-start space-x-3">
-                                        <div class="flex-1 space-y-1">
-                                            <div class="flex items-center space-x-2">
-                                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-2xs font-semibold bg-amber-100 text-amber-800 border border-amber-200 shadow-sm">Danger Zone</span>
-                                                <p class="text-sm font-semibold text-amber-900">Aksi hapus</p>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="8" class="px-6 py-12 text-center text-gray-600">
+                                        <div class="flex flex-col items-center space-y-3">
+                                            <svg class="h-14 w-14 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                            </svg>
+                                            <div>
+                                                <p class="text-base font-semibold text-gray-900">Belum Ada Format</p>
+                                                <p class="text-sm text-gray-500">Buat format baru untuk memulai mengelola data Excel Anda.</p>
                                             </div>
-                                            <p class="text-xs text-amber-800 leading-snug">Hapus isi akan reset ID tanpa merusak struktur. Hapus format akan menghilangkan tabel dan mapping.</p>
+                                            @can('create format')
+                                                <a href="{{ route('mapping.register.form') }}" 
+                                                   class="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-[#003b7a] hover:to-[#0091cf] focus:outline-none focus:ring-4 focus:ring-[#0057b7]/40 transition-all duration-300 shadow-lg hover:shadow-xl">
+                                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                                    </svg>
+                                                    Buat Format Pertama
+                                                </a>
+                                            @endcan
                                         </div>
-                                    </div>
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <form method="POST" action="{{ route('mapping.clear.data', $mapping->id) }}">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="button"
-                                                    class="w-full flex items-center justify-between px-4 py-3 bg-white/95 text-[#8c5800] border border-amber-200 hover:border-amber-300 hover:bg-amber-50 rounded-2xl font-semibold text-sm tracking-wide focus:outline-none focus:ring-2 focus:ring-amber-200 transition-all duration-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 group btn-clear-data"
-                                                    data-name="{{ $mapping->description ?? $mapping->code }}"
-                                                    data-table="{{ $mapping->table_name }}">
-                                                <span class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-[#fff7ed] text-[#d97706] border border-amber-100 group-hover:scale-105 transition-transform duration-200">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-6 4h6m-8 4h10a2 2 0 002-2V7a2 2 0 00-2-2h-3.586a1 1 0 01-.707-.293l-1.414-1.414A1 1 0 0010.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                                                    </svg>
-                                                </span>
-                                                <div class="flex flex-col text-left ml-2">
-                                                    <span class="leading-tight">Hapus Isi</span>
-                                                    <span class="text-[11px] text-amber-700 font-medium">Data saja</span>
-                                                </div>
-                                                <span class="text-xs font-semibold text-amber-700">•</span>
-                                            </button>
-                                        </form>
-                                        <form method="POST" action="{{ route('mapping.destroy', $mapping->id) }}">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="button" 
-                                                    class="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-[#d7263d] to-[#b31217] hover:from-[#b31217] hover:to-[#8f0e12] border border-transparent rounded-2xl font-bold text-sm text-white tracking-wide focus:outline-none focus:ring-2 focus:ring-red-300 transition-all duration-200 shadow-md hover:shadow-lg hover:-translate-y-0.5 group btn-delete-format"
-                                                    data-name="{{ $mapping->description ?? $mapping->code }}">
-                                                <span class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white/10 text-white border border-white/20 group-hover:scale-105 transition-transform duration-200">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5-4h4a1 1 0 011 1v1H9V4a1 1 0 011-1z"></path>
-                                                    </svg>
-                                                </span>
-                                                <div class="flex flex-col text-left ml-2">
-                                                    <span class="leading-tight">Hapus Format</span>
-                                                    <span class="text-[11px] text-white/80 font-medium">&amp; Data</span>
-                                                </div>
-                                                <span class="text-xs font-semibold text-white/80">!</span>
-                                            </button>
-                                        </form>
-                                    </div>
-                                </div>
-                            @endcan
-                        </div>
-                    </div>
-                @empty
-                    <div class="col-span-full">
-                        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
-                            <svg class="mx-auto h-24 w-24 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                            </svg>
-                            <h3 class="text-xl font-bold text-gray-900 mb-2">Belum Ada Format</h3>
-                            <p class="text-gray-600 mb-6">Buat format baru untuk memulai mengelola data Excel Anda</p>
-                            @can('create format')
-                                {{-- Diubah: Tombol pada state kosong --}}
-                                <a href="{{ route('mapping.register.form') }}" 
-                                   class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-[#0057b7] to-[#00a1e4] border border-transparent rounded-xl font-bold text-sm text-white uppercase tracking-wide hover:from-[#003b7a] hover:to-[#0091cf] focus:outline-none focus:ring-4 focus:ring-[#0057b7]/40 transition-all duration-300 shadow-lg hover:shadow-xl">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-                                    </svg>
-                                    Buat Format Pertama
-                                </a>
-                            @endcan
-                        </div>
-                    </div>
-                @endforelse
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             @if($mappings instanceof \Illuminate\Pagination\LengthAwarePaginator)

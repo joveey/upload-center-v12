@@ -31,7 +31,8 @@ class CleanupStrictVersions implements ShouldQueue
 
     public function handle(UploadIndexService $uploadIndexService): void
     {
-        $cooldown = now()->subDay();
+        // Grace period before dropping, to allow rollback/inspection
+        $cooldown = now()->subMinutes(10);
         Log::info('Strict cleanup started', [
             'mapping_id' => $this->mappingId,
             'period_date' => $this->periodDate,
@@ -51,9 +52,8 @@ class CleanupStrictVersions implements ShouldQueue
             return;
         }
 
-        // Keep newest inactive as backup
-        $runsToDrop = $runs->slice(1);
-        foreach ($runsToDrop as $run) {
+        // Drop ALL inactive versions that passed cooldown (active version stays intact)
+        foreach ($runs as $run) {
             $table = $uploadIndexService->buildVersionTableName($this->baseTable, $this->periodDate, (int) $run->upload_index);
             try {
                 if (Schema::connection($this->dbConnection)->hasTable($table)) {

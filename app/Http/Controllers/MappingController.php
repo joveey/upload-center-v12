@@ -67,6 +67,7 @@ class MappingController extends Controller
             'mappings.*.excel_column' => 'required|string|distinct|max:10',
             'mappings.*.database_column' => ['required', 'string', 'distinct', 'regex:/^[a-z0-9_]+$/', Rule::notIn(['id','period_date'])],
             'mappings.*.is_unique_key' => 'nullable|in:0,1,true,false',
+            'upload_mode' => ['nullable', 'in:upsert,strict'],
         ], [
             'name.unique' => 'Nama format ini sudah digunakan.',
             'table_name.regex' => 'Nama tabel hanya boleh berisi huruf kecil, angka, dan underscore (_).',
@@ -130,6 +131,7 @@ class MappingController extends Controller
                 'table_name' => $tableName,
                 'header_row' => $validated['header_row'],
                 'division_id' => Auth::user()->division_id,
+                'upload_mode' => $validated['upload_mode'] ?? null,
             ]);
             Log::info("Format berhasil disimpan di mapping_indices dengan ID: {$mappingIndex->id}");
 
@@ -767,7 +769,6 @@ class MappingController extends Controller
         $html .= '<p><strong>Tabel Tujuan:</strong> ' . htmlspecialchars($mapping->table_name) . '</p>';
         $html .= '<p><strong>Baris Header:</strong> ' . $mapping->header_row . '</p>';
         $html .= '</div></div></div></div>';
-        
         // Upload Mode Selection
         $html .= '<div class="border rounded-lg overflow-hidden bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">';
         $html .= '<div class="bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-3 border-b">';
@@ -777,34 +778,58 @@ class MappingController extends Controller
         $html .= '</h4>';
         $html .= '</div>';
         $html .= '<div class="p-4">';
-        $html .= '<div class="space-y-3">';
-        
-        // Upsert mode
-        $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-green-200 cursor-pointer hover:border-green-400 transition-all duration-200">';
-        $html .= '<input type="radio" name="upload_mode" value="upsert" checked class="mt-1 rounded-full border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50">';
-        $html .= '<div class="ml-3">';
-        $html .= '<div class="flex items-center">';
-        $html .= '<span class="font-semibold text-gray-900">Upsert (Update atau Insert)</span>';
-        $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Rekomendasi</span>';
-        $html .= '</div>';
-        $html .= '<p class="text-sm text-gray-600 mt-1">Update data yang sudah ada berdasarkan kunci unik, atau insert data baru jika belum ada</p>';
-        $html .= '</div>';
-        $html .= '</label>';
-        
-        // Strict mode
-        $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-red-200 cursor-pointer hover:border-red-400 transition-all duration-200">';
-        $html .= '<input type="radio" name="upload_mode" value="strict" class="mt-1 rounded-full border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50">';
-        $html .= '<div class="ml-3">';
-        $html .= '<div class="flex items-center">';
-        $html .= '<span class="font-semibold text-gray-900">Strict (Replace by Period)</span>';
-        $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Hati-hati</span>';
-        $html .= '</div>';
-        $html .= '<p class="text-sm text-gray-600 mt-1">Sistem akan <strong>otomatis mendeteksi tanggal</strong> dari file Excel (berdasarkan mapping), menghapus data lama pada bulan tersebut, lalu memasukkan data baru.</p>';
-        $html .= '<p class="text-xs text-red-600 mt-1 font-medium">⚠️ Pastikan kolom tanggal di Excel sudah dimapping ke \'period_date\'!</p>';
-        $html .= '</div>';
-        $html .= '</label>';
-        
-        $html .= '</div>';
+        if ($mapping->upload_mode) {
+            $lockedMode = $mapping->upload_mode;
+            $lockedLabel = $lockedMode === 'strict'
+                ? 'Strict (Replace by Period)'
+                : 'Upsert (Update atau Insert)';
+            $lockedDesc = $lockedMode === 'strict'
+                ? 'Sistem akan mengganti data per periode berdasarkan tanggal hasil mapping.'
+                : 'Update data yang sudah ada berdasarkan kunci unik, atau insert data baru jika belum ada.';
+
+            $html .= '<div class="flex items-start p-3 bg-white rounded-lg border-2 border-dashed border-amber-300">';
+            $html .= '<div class="ml-3">';
+            $html .= '<div class="flex items-center">';
+            $html .= '<span class="font-semibold text-gray-900">' . $lockedLabel . '</span>';
+            $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">Terkunci</span>';
+            $html .= '</div>';
+            $html .= '<p class="text-sm text-gray-600 mt-1">' . $lockedDesc . '</p>';
+            if ($lockedMode === 'strict') {
+                $html .= '<p class="text-xs text-red-600 mt-1 font-medium">Perhatian: pastikan kolom tanggal di Excel sudah dimapping ke \\\'period_date\\\'!</p>';
+            }
+            $html .= '</div>';
+            $html .= '</div>';
+            $html .= '<input type="hidden" name="upload_mode" value="' . htmlspecialchars($lockedMode, ENT_QUOTES, 'UTF-8') . '">';
+        } else {
+            $html .= '<div class="space-y-3">';
+            
+            // Upsert mode
+            $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-green-200 cursor-pointer hover:border-green-400 transition-all duration-200">';
+            $html .= '<input type="radio" name="upload_mode" value="upsert" checked class="mt-1 rounded-full border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50">';
+            $html .= '<div class="ml-3">';
+            $html .= '<div class="flex items-center">';
+            $html .= '<span class="font-semibold text-gray-900">Upsert (Update atau Insert)</span>';
+            $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Rekomendasi</span>';
+            $html .= '</div>';
+            $html .= '<p class="text-sm text-gray-600 mt-1">Update data yang sudah ada berdasarkan kunci unik, atau insert data baru jika belum ada</p>';
+            $html .= '</div>';
+            $html .= '</label>';
+            
+            // Strict mode
+            $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-red-200 cursor-pointer hover:border-red-400 transition-all duration-200">';
+            $html .= '<input type="radio" name="upload_mode" value="strict" class="mt-1 rounded-full border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50">';
+            $html .= '<div class="ml-3">';
+            $html .= '<div class="flex items-center">';
+            $html .= '<span class="font-semibold text-gray-900">Strict (Replace by Period)</span>';
+            $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Hati-hati</span>';
+            $html .= '</div>';
+            $html .= '<p class="text-sm text-gray-600 mt-1">Sistem akan <strong>otomatis mendeteksi tanggal</strong> dari file Excel (berdasarkan mapping), menghapus data lama pada bulan tersebut, lalu memasukkan data baru.</p>';
+            $html .= '<p class="text-xs text-red-600 mt-1 font-medium">Perhatian: pastikan kolom tanggal di Excel sudah dimapping ke "period" </p>';
+            $html .= '</div>';
+            $html .= '</label>';
+            
+            $html .= '</div>';
+        }
         $html .= '</div>';
         $html .= '</div>';
         
@@ -1790,6 +1815,8 @@ class MappingController extends Controller
             'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
             'sheet_name' => ['nullable', 'string'],
             'period_date' => ['nullable', 'required_if:upload_mode,strict', 'date_format:Y-m-d'],
+        ], [
+            'period_date.date_format' => 'Period harus menggunakan format YYYY-MM-DD.',
         ]);
 
         $uploadedFile = $request->file('data_file');
@@ -1868,6 +1895,8 @@ class MappingController extends Controller
                 'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
                 'sheet_name' => ['nullable', 'string'],
                 'period_date' => ['nullable', 'required_if:upload_mode,strict', 'date_format:Y-m-d'],
+            ], [
+                'period_date.date_format' => 'Period harus menggunakan format YYYY-MM-DD.',
             ]);
             
             // Use provided period_date (strict) or today's date
@@ -2212,7 +2241,11 @@ class MappingController extends Controller
                 $rowValues[] = $nowStringSanitized;
 
                 if ($useBulkInsert) {
-                    fputcsv($csvHandle, $rowValues, $bulkDelimiter);
+                    // Write CSV line without adding quote enclosures so spaces stay clean
+                    $safeRow = array_map(function ($v) {
+                        return $v === null ? '' : $v;
+                    }, $rowValues);
+                    fwrite($csvHandle, implode($bulkDelimiter, $safeRow) . PHP_EOL);
                 } else {
                     $chunk[] = array_combine($stagingColumns, $rowValues);
                     if (count($chunk) >= $chunkSize) {
@@ -2636,7 +2669,9 @@ class MappingController extends Controller
             'data_file' => ['required', File::types(['xlsx', 'xls', 'csv'])],
             'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
             'sheet_name' => ['nullable', 'string'],
-            'period_date' => ['required', 'date'],
+            'period_date' => ['required', 'date_format:Y-m-d'],
+        ], [
+            'period_date.date_format' => 'Period harus menggunakan format YYYY-MM-DD.',
         ]);
 
         $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
@@ -2678,8 +2713,8 @@ class MappingController extends Controller
         $headerRow = max(1, (int) $mapping->header_row);
         $dataStartRow = $headerRow + 1;
 
-        // Period comes from user input; normalize to Y-m-d with the same parsing used for Excel values
-        $periodDate = $this->convertExcelDate($validated['period_date']);
+        // Period comes from user input; validation already enforces YYYY-MM-DD
+        $periodDate = $validated['period_date'];
         if (!$periodDate || !preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $periodDate)) {
             return response()->json(['success' => false, 'message' => 'Tanggal periode tidak valid.'], 422);
         }
@@ -2715,15 +2750,8 @@ class MappingController extends Controller
                     if ($val !== null && $val !== '') $hasValue = true;
 
                     if (in_array($dbCol, ['period', 'period_date', 'periode', 'period_dt', 'perioddate'], true)) {
-                        $val = $this->convertExcelDate($val);
-                        // Skip rows whose period is different from the selected period
-                        if ($val && $val !== $periodDate) {
-                            continue 2; // skip this row entirely
-                        }
-                        // Fill empty/null period with selected period
-                        if (!$val) {
-                            $val = $periodDate;
-                        }
+                        // Always override period in strict mode to the selected period to avoid accidental skips
+                        $val = $periodDate;
                     }
                     $record[$dbCol] = $val;
                 }
@@ -2777,3 +2805,6 @@ class MappingController extends Controller
         }
     }
 }
+
+
+

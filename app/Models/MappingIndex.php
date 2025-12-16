@@ -17,6 +17,7 @@ class MappingIndex extends Model
         'description',
         'table_name',
         'header_row',
+        'upload_mode',
     ];
 
     /**
