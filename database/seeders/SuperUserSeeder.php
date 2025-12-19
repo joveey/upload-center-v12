@@ -31,7 +31,7 @@ class SuperUserSeeder extends Seeder
         );
 
         $role = Role::firstOrCreate([
-            'name' => 'super-admin',
+            'name' => 'superuser',
             'guard_name' => config('auth.defaults.guard', 'web'),
         ]);
 

@@ -19,7 +19,6 @@ class UploadLogController extends Controller
 
         $isAdmin = $this->userHasRole($user, 'superuser')
             || $this->userHasRole($user, 'admin')
-            || $this->userHasRole($user, 'super-admin') // backward compat
             || optional($user->division)->is_super_user;
 
         $query = UploadLog::with(['mappingIndex', 'division', 'user'])

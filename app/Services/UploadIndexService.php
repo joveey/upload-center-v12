@@ -16,8 +16,9 @@ class UploadIndexService
 
     /**
      * Start a new upload run for a mapping with a lock-safe, incrementing index.
+     * Optionally seed the max index with an external baseline (e.g. legacy *_INDEX table).
      */
-    public function beginRun(int $mappingId, ?int $userId = null, ?string $periodDate = null): object
+    public function beginRun(int $mappingId, ?int $userId = null, ?string $periodDate = null, ?int $baselineMaxIndex = null): object
     {
         $connection = DB::connection($this->controlConnection);
 
@@ -41,6 +42,10 @@ class UploadIndexService
                 ->when($periodDate !== null, fn($q) => $q->where('period_date', $periodDate), fn($q) => $q->whereNull('period_date'))
                 ->lockForUpdate()
                 ->max('upload_index');
+
+            if ($baselineMaxIndex !== null) {
+                $maxIndex = max($maxIndex, (int) $baselineMaxIndex);
+            }
 
             $nextIndex = $maxIndex + 1;
             $now = now();

@@ -43,12 +43,13 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get total upload counts per division (all divisions, including super-admin)
+     * Get total upload counts per division (all divisions, including superuser)
      */
     private function getDivisionUploadCounts(): array
     {
         $divisions = \App\Models\Division::pluck('name', 'id');
         $legacyLabel = 'Legacy';
+        $superDivisionNames = \App\Models\Division::where('is_super_user', true)->pluck('name')->all();
 
         // Hitung jumlah format per divisi (bukan upload rows)
         $formatCounts = [];
@@ -67,7 +68,7 @@ class DashboardController extends Controller
         }
 
         // Pastikan semua divisi muncul, default 0
-        $filteredDivisions = $divisions->filter(fn ($name) => !in_array($name, ['Super Admin', 'SuperUser'], true));
+        $filteredDivisions = $divisions->filter(fn ($name) => !in_array($name, $superDivisionNames, true));
         $allNames = array_unique(array_merge(array_values($filteredDivisions->toArray()), [$legacyLabel], array_keys($formatCounts)));
 
         return collect($allNames)

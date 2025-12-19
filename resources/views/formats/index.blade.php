@@ -206,6 +206,12 @@
                                     </td>
                                     <td class="px-6 py-3">
                                         <div class="flex items-center justify-end gap-2 flex-wrap">
+                                            @can('update format')
+                                                <a href="{{ route('mapping.edit', $mapping->id) }}"
+                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-800 hover:bg-gray-50">
+                                                    Edit
+                                                </a>
+                                            @endcan
                                             @can('view data')
                                                 <a href="{{ route('mapping.view.data', $mapping->id) }}"
                                                    class="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#0057b7] text-white text-xs font-semibold hover:bg-[#004a99]">

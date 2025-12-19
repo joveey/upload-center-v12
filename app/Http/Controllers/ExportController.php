@@ -128,7 +128,7 @@ class ExportController extends Controller
             $query->where('upload_index', $activeRun->upload_index);
         }
         
-        if (!$this->userHasRole($user, 'super-admin')) {
+        if (!$this->userHasRole($user, 'superuser')) {
             if (in_array('division_id', $actualTableColumns)) {
                 $query->where('division_id', $user->division_id);
             }

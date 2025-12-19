@@ -35,7 +35,7 @@
                         class="inline-flex items-center px-4 py-2.5 bg-indigo-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-200 shadow-sm hover:shadow-md">
                     Trim Spasi
                 </button>
-                @role('super-admin')
+                @role('superuser')
                     <form method="POST" action="{{ route('mapping.clear.data', $mapping->id) }}">
                         @csrf
                         @method('DELETE')
