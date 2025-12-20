@@ -126,6 +126,11 @@ return [
 
     ],
 
+    'legacy_databases' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('LEGACY_DB_DATABASES', ''))
+    ))),
+
     /*
     |--------------------------------------------------------------------------
     | Migration Repository Table

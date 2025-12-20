@@ -18,6 +18,8 @@ class MappingIndex extends Model
         'table_name',
         'header_row',
         'upload_mode',
+        'connection',
+        'target_connection',
     ];
 
     /**

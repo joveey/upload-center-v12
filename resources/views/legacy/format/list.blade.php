@@ -9,19 +9,29 @@
                 @if(!empty($search ?? ''))
                     <p class="mt-1 text-xs text-[#0057b7] font-semibold">Filter: "{{ $search }}"</p>
                 @endif
+                @if(!empty($selectedDb ?? ''))
+                    <p class="mt-1 text-xs text-gray-500">DB: {{ $selectedDb }}</p>
+                @endif
             </div>
             <div class="flex items-center space-x-3">
-                <form method="GET" action="{{ route('legacy.format.list') }}" class="relative">
-                    <input
-                        type="text"
-                        name="q"
-                        value="{{ $search ?? '' }}"
-                        placeholder="Cari tabel, kode, deskripsi..."
-                        class="pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0057b7]/40 focus:border-[#0057b7] bg-white shadow-sm w-64 md:w-72"
-                    />
-                    <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
-                    </svg>
+                <form method="GET" action="{{ route('legacy.format.list') }}" class="flex items-center space-x-2">
+                    <div class="relative">
+                        <input
+                            type="text"
+                            name="q"
+                            value="{{ $search ?? '' }}"
+                            placeholder="Cari tabel, kode, deskripsi..."
+                            class="pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0057b7]/40 focus:border-[#0057b7] bg-white shadow-sm w-64 md:w-72"
+                        />
+                        <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path>
+                        </svg>
+                    </div>
+                    <select name="db" onchange="this.form.submit()" class="border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0057b7]/40 focus:border-[#0057b7] bg-white shadow-sm py-2.5 px-3">
+                        @foreach(($legacyDatabases ?? []) as $dbName)
+                            <option value="{{ $dbName }}" @selected($dbName === ($selectedDb ?? ''))>{{ $dbName }}</option>
+                        @endforeach
+                    </select>
                 </form>
             </div>
         </div>
@@ -84,17 +94,23 @@
                                                     Buka
                                                 </a>
                                             @else
-                                                @can('create format')
-                                                    <form action="{{ route('legacy.format.quick-map') }}" method="POST" class="inline">
-                                                        @csrf
-                                                        <input type="hidden" name="table_name" value="{{ $mapping->table_name }}">
-                                                        <button type="submit" class="inline-flex items-center px-3 py-1.5 bg-white border border-[#cbd5e1] hover:border-[#0057b7] hover:text-[#0057b7] text-gray-700 rounded-lg text-xs font-semibold shadow-sm transition-colors duration-150">
-                                                            Register Table
-                                                        </button>
-                                                    </form>
-                                                @else
-                                                    <span class="text-xs text-gray-500">Butuh izin buat format</span>
-                                                @endcan
+                                                <div class="flex items-center flex-wrap gap-2">
+                                                    <a href="{{ route('legacy.format.preview', ['table' => $mapping->table_name, 'db' => $selectedDb]) }}" class="inline-flex items-center px-3 py-1.5 bg-white border border-[#cbd5e1] hover:border-[#0057b7] hover:text-[#0057b7] text-gray-700 rounded-lg text-xs font-semibold shadow-sm transition-colors duration-150">
+                                                        Preview
+                                                    </a>
+                                                    @can('create format')
+                                                        <form action="{{ route('legacy.format.quick-map') }}" method="POST" class="inline">
+                                                            @csrf
+                                                            <input type="hidden" name="table_name" value="{{ $mapping->table_name }}">
+                                                            <input type="hidden" name="db" value="{{ $selectedDb }}">
+                                                            <button type="submit" class="inline-flex items-center px-3 py-1.5 bg-white border border-[#cbd5e1] hover:border-[#0057b7] hover:text-[#0057b7] text-gray-700 rounded-lg text-xs font-semibold shadow-sm transition-colors duration-150">
+                                                                Register Table
+                                                            </button>
+                                                        </form>
+                                                    @else
+                                                        <span class="text-xs text-gray-500">Butuh izin buat format</span>
+                                                    @endcan
+                                                </div>
                                             @endif
                                         </td>
                                     </tr>

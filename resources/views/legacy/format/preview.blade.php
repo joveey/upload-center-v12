@@ -2,14 +2,31 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <div>
-                <h2 class="font-bold text-2xl text-gray-900 leading-tight">Legacy Format Data</h2>
+                <h2 class="font-bold text-2xl text-gray-900 leading-tight">Preview Data Legacy</h2>
                 <p class="mt-1 text-sm text-gray-600">
-                    Mapping: <span class="font-semibold text-gray-800">{{ $mapping->description ?? $mapping->code }}</span> —
-                    Table: <code class="text-xs">{{ $mapping->table_name }}</code>
-                    @if(!empty($selectedDb ?? ''))
-                        <span class="ml-2 text-xs text-gray-500">DB: {{ $selectedDb }}</span>
+                    Table: <code class="text-xs">{{ $tableName }}</code>
+                    @if(!empty($legacyDbName ?? ''))
+                        <span class="ml-2 text-xs text-gray-500">DB: {{ $legacyDbName }}</span>
                     @endif
                 </p>
+                @if(!empty($search ?? ''))
+                    <p class="mt-1 text-xs text-[#0057b7] font-semibold">Filter: "{{ $search }}"</p>
+                @endif
+            </div>
+            <div class="flex items-center space-x-2">
+                <a href="{{ route('legacy.format.list', ['db' => $selectedDb]) }}" class="inline-flex items-center px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-colors duration-150">
+                    Kembali
+                </a>
+                @can('create format')
+                    <form action="{{ route('legacy.format.quick-map') }}" method="POST" class="inline">
+                        @csrf
+                        <input type="hidden" name="table_name" value="{{ $tableName }}">
+                        <input type="hidden" name="db" value="{{ $selectedDb }}">
+                        <button type="submit" class="inline-flex items-center px-4 py-2.5 bg-[#0057b7] hover:bg-[#004a99] text-white rounded-lg text-sm font-semibold shadow-sm transition-colors duration-150">
+                            Register Table
+                        </button>
+                    </form>
+                @endcan
             </div>
         </div>
     </x-slot>
@@ -26,18 +43,19 @@
                                 </svg>
                             </div>
                             <div>
-                                <p class="text-sm text-[#d8e7f7]">Legacy / Mapping-driven</p>
-                                <h3 class="text-xl font-semibold">Data untuk {{ $mapping->description ?? $mapping->code }}</h3>
+                                <p class="text-sm text-[#d8e7f7]">Legacy / Preview</p>
+                                <h3 class="text-xl font-semibold">Data untuk {{ $tableName }}</h3>
                             </div>
                         </div>
                         <div class="text-sm text-[#d8e7f7]">
-                            Ditampilkan secara dinamis berdasarkan mapping & tabel tujuan.
+                            Preview data sebelum registrasi format.
                         </div>
                     </div>
                 </div>
 
                 <div class="p-6 space-y-4">
-                    <form method="GET" action="{{ route('legacy.format.index', $mapping->id) }}" class="flex flex-col md:flex-row md:items-center md:space-x-3 space-y-3 md:space-y-0">
+                    <form method="GET" action="{{ route('legacy.format.preview') }}" class="flex flex-col md:flex-row md:items-center md:space-x-3 space-y-3 md:space-y-0">
+                        <input type="hidden" name="table" value="{{ $tableName }}">
                         <div class="flex-1">
                             <div class="relative">
                                 <input
@@ -45,7 +63,7 @@
                                     name="q"
                                     value="{{ $search }}"
                                     class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#d8e7f7] focus:ring-opacity-50 pl-10 py-2.5"
-                                    placeholder="Cari di kolom teks yang dipetakan..."
+                                    placeholder="Cari di kolom teks..."
                                 >
                                 <div class="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-400">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -55,14 +73,14 @@
                             </div>
                         </div>
                         <div class="w-full md:w-60">
-                            <select name="db" onchange="this.form.submit()" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#d8e7f7] focus:ring-opacity-50 py-2.5">
+                            <select name="db" onchange="this.form.submit()" class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#d8e7f7] focus:ring-opacity-50 py-2.5">
                                 @foreach(($legacyDatabases ?? []) as $dbName)
                                     <option value="{{ $dbName }}" @selected($dbName === ($selectedDb ?? ''))>{{ $dbName }}</option>
                                 @endforeach
                             </select>
                         </div>
                         <div class="flex space-x-2">
-                            <a href="{{ route('legacy.format.index', ['mapping' => $mapping->id, 'db' => $selectedDb]) }}" class="inline-flex items-center px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-colors duration-150">
+                            <a href="{{ route('legacy.format.preview', ['table' => $tableName, 'db' => $selectedDb]) }}" class="inline-flex items-center px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-colors duration-150">
                                 Reset
                             </a>
                             <button class="inline-flex items-center px-5 py-2.5 bg-[#0057b7] hover:bg-[#004a99] text-white rounded-lg text-sm font-semibold shadow-sm transition-colors duration-150" type="submit">
@@ -100,7 +118,7 @@
                                 @empty
                                     <tr>
                                         <td colspan="{{ count($columns) + ($showIdColumn ? 1 : 0) }}" class="px-4 py-6 text-center text-sm text-gray-600">
-                                            Tidak ada data legacy untuk mapping ini.
+                                            Tidak ada data legacy untuk tabel ini.
                                         </td>
                                     </tr>
                                 @endforelse

@@ -22,7 +22,7 @@ class UploadIndexService
     {
         $connection = DB::connection($this->controlConnection);
 
-        return $connection->transaction(function () use ($connection, $mappingId, $userId, $periodDate) {
+        return $connection->transaction(function () use ($connection, $mappingId, $userId, $periodDate, $baselineMaxIndex) {
             $driver = $connection->getDriverName();
             $periodDate = $periodDate ? date('Y-m-d', strtotime($periodDate)) : null;
 

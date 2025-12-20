@@ -33,6 +33,7 @@ class ExportController extends Controller
         $connection = $mapping->target_connection
             ?? $mapping->connection
             ?? config('database.default');
+        $this->ensureLegacyConnectionConfigured($connection);
 
         // Jika tabel tidak ada di koneksi terpilih tapi ada di legacy, gunakan legacy
         if (!Schema::connection($connection)->hasTable($baseTableName) && Schema::connection('sqlsrv_legacy')->hasTable($baseTableName)) {
@@ -41,7 +42,7 @@ class ExportController extends Controller
 
         $tableName = $baseTableName;
         $activeRun = null;
-        // Resolve run for requested period (latest)
+        $legacyActiveIndex = null;
         if ($periodFilter) {
             $periodRun = DB::table('mapping_upload_runs')
                 ->where('mapping_index_id', $mapping->id)
@@ -51,21 +52,22 @@ class ExportController extends Controller
 
             if ($periodRun) {
                 $activeRun = (object) $periodRun;
-                $candidate = $uploadIndexService->buildVersionTableName($baseTableName, $periodRun->period_date, (int) $periodRun->upload_index);
-                if (Schema::connection($connection)->hasTable($candidate)) {
-                    $tableName = $candidate;
-                }
             }
         }
 
         // Fallback to active run (latest) if none matched the requested period
         if (! $activeRun) {
             $activeRun = $uploadIndexService->getActiveRun($mapping->id, null);
-            if ($activeRun && $activeRun->period_date) {
-                $candidate = $uploadIndexService->buildVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
-                if (Schema::connection($connection)->hasTable($candidate)) {
-                    $tableName = $candidate;
-                }
+        }
+
+        if (! $activeRun) {
+            $legacyActiveIndex = $this->getActiveUploadIndexFromLegacy($baseTableName, $connection, $periodFilter);
+        }
+
+        if ($activeRun && $activeRun->period_date) {
+            $candidate = $uploadIndexService->buildVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
+            if (Schema::connection($connection)->hasTable($candidate)) {
+                $tableName = $candidate;
             }
         }
         
@@ -124,8 +126,16 @@ class ExportController extends Controller
 
         $query = DB::connection($connection)->table($tableName)->select($selectColumns);
         
-        if (in_array('upload_index', $actualTableColumns, true) && $activeRun) {
-            $query->where('upload_index', $activeRun->upload_index);
+        $uploadIndexFilter = $activeRun?->upload_index ?? $legacyActiveIndex;
+        if (in_array('upload_index', $actualTableColumns, true) && $uploadIndexFilter !== null) {
+            if ($tableName === $baseTableName) {
+                $query->where(function ($q2) use ($uploadIndexFilter) {
+                    $q2->where('upload_index', $uploadIndexFilter)
+                        ->orWhereNull('upload_index');
+                });
+            } else {
+                $query->where('upload_index', $uploadIndexFilter);
+            }
         }
         
         if (!$this->userHasRole($user, 'superuser')) {
@@ -139,8 +149,31 @@ class ExportController extends Controller
             $query->whereDate($periodColumn, $request->period_date);
         }
 
+        $includeBaseFallback = $tableName !== $baseTableName
+            && Schema::connection($connection)->hasTable($baseTableName);
+        $unversionedQuery = null;
+        if ($includeBaseFallback) {
+            $baseColumns = Schema::connection($connection)->getColumnListing($baseTableName);
+            $baseSelectColumns = array_values(array_filter($selectColumns, function ($col) use ($baseColumns) {
+                return in_array($col, $baseColumns, true);
+            }));
+            $unversionedQuery = DB::connection($connection)->table($baseTableName)->select($baseSelectColumns);
+            if (in_array('upload_index', $baseColumns, true)) {
+                $unversionedQuery->whereNull('upload_index');
+            }
+            if (!$this->userHasRole($user, 'superuser') && in_array('division_id', $baseColumns, true)) {
+                $unversionedQuery->where('division_id', $user->division_id);
+            }
+            if ($periodColumn && in_array($periodColumn, $baseColumns, true) && $request->has('period_date') && $request->period_date) {
+                $unversionedQuery->whereDate($periodColumn, $request->period_date);
+            }
+        }
+
         // Count first to decide output mode
         $totalCount = (clone $query)->count();
+        if ($unversionedQuery) {
+            $totalCount += (clone $unversionedQuery)->count();
+        }
         if ($totalCount === 0) {
             return back()->with('error', 'Tidak ada data untuk diexport.');
         }
@@ -167,7 +200,7 @@ class ExportController extends Controller
             : ($selectColumns[0] ?? $validColumns[0] ?? 'id');
         $fileName = $mapping->code . '_' . date('Y-m-d_His') . '.xlsx';
 
-        return response()->streamDownload(function () use ($query, $headerRow, $columnMapping, $actualTableColumns, $chunkSize, $orderColumn, $periodColumn) {
+        return response()->streamDownload(function () use ($query, $unversionedQuery, $headerRow, $columnMapping, $actualTableColumns, $chunkSize, $orderColumn, $periodColumn) {
             $writer = new Writer();
             $writer->openToFile('php://output');
 
@@ -195,6 +228,28 @@ class ExportController extends Controller
                     $writer->addRow(Row::fromValues($rowData));
                 }
             });
+            if ($unversionedQuery) {
+                $unversionedQuery->orderBy($orderColumn)->chunk($chunkSize, function ($rows) use ($writer, $columnMapping, $actualTableColumns, $periodColumn) {
+                    foreach ($rows as $item) {
+                        $rowData = [];
+                        foreach (array_keys($columnMapping) as $excelCol) {
+                            $dbColumn = $columnMapping[$excelCol];
+                            $rowData[] = $item->{$dbColumn} ?? '';
+                        }
+                        if ($periodColumn) {
+                            $rowData[] = $item->{$periodColumn} ?? '';
+                        }
+                        if (in_array('created_at', $actualTableColumns)) {
+                            $rowData[] = $item->created_at ?? '';
+                        }
+                        if (in_array('updated_at', $actualTableColumns)) {
+                            $rowData[] = $item->updated_at ?? '';
+                        }
+
+                        $writer->addRow(Row::fromValues($rowData));
+                    }
+                });
+            }
 
             $writer->close();
         }, $fileName, [
@@ -306,5 +361,102 @@ class ExportController extends Controller
         }
 
         return max(0, $index - 1);
+    }
+
+    private function detectLegacyIndexTable(string $baseTable, string $connection): ?array
+    {
+        $indexTable = $baseTable . '_INDEX';
+        if (! Schema::connection($connection)->hasTable($indexTable)) {
+            return null;
+        }
+
+        $columns = Schema::connection($connection)->getColumnListing($indexTable);
+        $indexColumn = collect($columns)->first(function ($col) {
+            return in_array(strtolower($col), ['upload_index', 'index', 'idx'], true);
+        });
+        $activeColumn = collect($columns)->first(function ($col) {
+            return in_array(strtolower($col), ['is_active', 'active', 'status'], true);
+        });
+        if (! $indexColumn || ! $activeColumn) {
+            return null;
+        }
+
+        $periodColumn = collect($columns)->first(function ($col) {
+            return in_array(strtolower($col), ['period_date', 'period', 'periode'], true);
+        });
+
+        return [
+            'table' => $indexTable,
+            'index_column' => $indexColumn,
+            'active_column' => $activeColumn,
+            'period_column' => $periodColumn,
+        ];
+    }
+
+    private function getActiveUploadIndexFromLegacy(string $baseTable, string $connection, ?string $periodDate = null): ?int
+    {
+        $meta = $this->detectLegacyIndexTable($baseTable, $connection);
+        if (! $meta) {
+            return null;
+        }
+
+        try {
+            $conn = DB::connection($connection);
+            $grammar = $conn->getQueryGrammar();
+
+            $row = $conn->table($meta['table'])
+                ->when($periodDate && $meta['period_column'], function ($q) use ($meta, $periodDate) {
+                    $q->whereDate($meta['period_column'], $periodDate);
+                })
+                ->where(function ($q) use ($meta, $grammar) {
+                    $wrapped = $grammar->wrap($meta['active_column']);
+                    $q->where($meta['active_column'], 1)
+                        ->orWhere($meta['active_column'], true)
+                        ->orWhereRaw("LOWER({$wrapped}) = 'active'");
+                })
+                ->orderByDesc($meta['index_column'])
+                ->first();
+
+            if ($row && isset($row->{$meta['index_column']}) && is_numeric($row->{$meta['index_column']})) {
+                return (int) $row->{$meta['index_column']};
+            }
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return null;
+    }
+
+    private function isLegacyConnectionName(?string $connection): bool
+    {
+        if (! $connection) {
+            return false;
+        }
+
+        return $connection === 'sqlsrv_legacy' || str_starts_with($connection, 'legacy_');
+    }
+
+    private function ensureLegacyConnectionConfigured(string $connection): void
+    {
+        if (! $this->isLegacyConnectionName($connection) || $connection === 'sqlsrv_legacy') {
+            return;
+        }
+
+        if (config("database.connections.{$connection}")) {
+            return;
+        }
+
+        $baseConfig = config('database.connections.sqlsrv_legacy');
+        if (! is_array($baseConfig)) {
+            return;
+        }
+
+        $dbName = substr($connection, strlen('legacy_'));
+        if ($dbName === '') {
+            return;
+        }
+
+        $baseConfig['database'] = $dbName;
+        config(["database.connections.{$connection}" => $baseConfig]);
     }
 }

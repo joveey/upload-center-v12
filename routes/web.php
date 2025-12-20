@@ -88,6 +88,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/legacy-format', [LegacyFormatController::class, 'list'])
         ->name('legacy.format.list');
 
+    Route::get('/legacy-format/preview', [LegacyFormatController::class, 'preview'])
+        ->name('legacy.format.preview');
+
     Route::post('/legacy-format/quick-map', [LegacyFormatController::class, 'quickMap'])
         ->middleware('can:create format')
         ->name('legacy.format.quick-map');
