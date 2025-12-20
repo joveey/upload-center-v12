@@ -13,7 +13,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -442,128 +441,109 @@ class MappingController extends Controller
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
         }
 
-        $selectColumns = [];
-        $validColumns = [];
+        $displayColumns = array_values($columnMapping);
+        $selectColumns = array_values(array_unique(array_merge(['id'], $displayColumns, ['created_at', 'updated_at'])));
+        $tableColumnsCache = [];
+        $connectionInstance = DB::connection($connection);
+        $grammar = $connectionInstance->getQueryGrammar();
 
-        $rowsCollection = collect();
-        $usedBaseTable = false;
+        $getTableColumns = function (string $tableName) use ($connection, &$tableColumnsCache) {
+            if (!array_key_exists($tableName, $tableColumnsCache)) {
+                $tableColumnsCache[$tableName] = Schema::connection($connection)->getColumnListing($tableName);
+            }
+            return $tableColumnsCache[$tableName];
+        };
 
-        // Helper to collect data from a specific table (versioned) with optional upload_index filter
-        $collectFromTable = function (string $tblName, ?int $uploadIndex = null) use ($connection, $user, &$validColumns, &$selectColumns, $columnMapping, $baseTableName, &$usedBaseTable, $periodFilter) {
-            if (!Schema::connection($connection)->hasTable($tblName)) {
-                return collect();
-            }
-            $actualTableColumns = Schema::connection($connection)->getColumnListing($tblName);
-            $valid = array_intersect(array_values($columnMapping), $actualTableColumns);
-            if (empty($valid)) {
-                return collect();
-            }
-            // Cache once
-            if (empty($selectColumns) || empty($validColumns)) {
-                $validColumns = $valid;
-                $selectColumns = array_values(array_unique(array_filter(array_merge(['id'], $valid, ['period', 'period_date', 'created_at', 'updated_at']), function ($col) use ($actualTableColumns) {
-                    return in_array($col, $actualTableColumns, true);
-                })));
-            }
-
-            $q = DB::connection($connection)->table($tblName)->select($selectColumns);
-            if ($periodFilter) {
-                $periodColumn = null;
-                foreach (['period_date', 'period', 'periode', 'period_dt', 'perioddate'] as $candidate) {
-                    if (in_array($candidate, $actualTableColumns, true)) {
-                        $periodColumn = $candidate;
-                        break;
-                    }
-                }
-                if ($periodColumn) {
-                    $q->whereDate($periodColumn, $periodFilter);
-                }
-            }
-            if ($uploadIndex !== null && in_array('upload_index', $actualTableColumns, true)) {
-                if ($tblName === $baseTableName) {
-                    $q->where(function ($q2) use ($uploadIndex) {
-                        $q2->where('upload_index', $uploadIndex)
-                            ->orWhereNull('upload_index');
-                    });
+        $buildSelectColumns = function (array $actualColumns) use ($selectColumns, $grammar) {
+            $selects = [];
+            foreach ($selectColumns as $col) {
+                if (in_array($col, $actualColumns, true)) {
+                    $selects[] = $col;
                 } else {
-                    $q->where('upload_index', $uploadIndex);
+                    $selects[] = DB::raw('NULL as ' . $grammar->wrap($col));
                 }
             }
-            if (!$this->userHasRole($user, 'superuser') && in_array('division_id', $actualTableColumns)) {
-                $q->where('division_id', $user->division_id);
-            }
-            if ($tblName === $baseTableName) {
-                $usedBaseTable = true;
-            }
-            return $q->get();
+            return $selects;
         };
-        $collectUnversionedBase = function () use ($connection, $user, &$validColumns, &$selectColumns, $columnMapping, $baseTableName, $periodFilter) {
-            if (!Schema::connection($connection)->hasTable($baseTableName)) {
-                return collect();
-            }
-            $actualTableColumns = Schema::connection($connection)->getColumnListing($baseTableName);
-            $valid = array_intersect(array_values($columnMapping), $actualTableColumns);
-            if (empty($valid)) {
-                return collect();
-            }
-            if (empty($selectColumns) || empty($validColumns)) {
-                $validColumns = $valid;
-                $selectColumns = array_values(array_unique(array_filter(array_merge(['id'], $valid, ['period', 'period_date', 'created_at', 'updated_at']), function ($col) use ($actualTableColumns) {
-                    return in_array($col, $actualTableColumns, true);
-                })));
+
+        $buildQuery = function (
+            string $tableName,
+            ?int $uploadIndex = null,
+            bool $includeNullUploadIndex = false,
+            bool $onlyNullUploadIndex = false
+        ) use ($connection, $user, $periodFilter, $getTableColumns, $buildSelectColumns, $baseTableName) {
+            if (!Schema::connection($connection)->hasTable($tableName)) {
+                return null;
             }
 
-            $baseSelectColumns = array_values(array_filter($selectColumns, function ($col) use ($actualTableColumns) {
-                return in_array($col, $actualTableColumns, true);
-            }));
-            if (empty($baseSelectColumns)) {
-                return collect();
-            }
+            $actualColumns = $getTableColumns($tableName);
+            $query = DB::connection($connection)->table($tableName)->select($buildSelectColumns($actualColumns));
 
-            $q = DB::connection($connection)->table($baseTableName)->select($baseSelectColumns);
-            if (in_array('upload_index', $actualTableColumns, true)) {
-                $q->whereNull('upload_index');
-            }
             if ($periodFilter) {
                 $periodColumn = null;
                 foreach (['period_date', 'period', 'periode', 'period_dt', 'perioddate'] as $candidate) {
-                    if (in_array($candidate, $actualTableColumns, true)) {
+                    if (in_array($candidate, $actualColumns, true)) {
                         $periodColumn = $candidate;
                         break;
                     }
                 }
                 if ($periodColumn) {
-                    $q->whereDate($periodColumn, $periodFilter);
+                    $query->whereDate($periodColumn, $periodFilter);
                 }
             }
-            if (!$this->userHasRole($user, 'superuser') && in_array('division_id', $actualTableColumns)) {
-                $q->where('division_id', $user->division_id);
+
+            if (in_array('upload_index', $actualColumns, true)) {
+                if ($onlyNullUploadIndex) {
+                    $query->whereNull('upload_index');
+                } elseif ($uploadIndex !== null) {
+                    if ($includeNullUploadIndex && $tableName === $baseTableName) {
+                        $query->where(function ($q2) use ($uploadIndex) {
+                            $q2->where('upload_index', $uploadIndex)
+                                ->orWhereNull('upload_index');
+                        });
+                    } else {
+                        $query->where('upload_index', $uploadIndex);
+                    }
+                }
             }
-            return $q->get();
+
+            if (!$this->userHasRole($user, 'superuser') && in_array('division_id', $actualColumns, true)) {
+                $query->where('division_id', $user->division_id);
+            }
+
+            return $query;
         };
+
+        $queries = [];
+        $usedBaseTable = false;
+        $baseTableExists = Schema::connection($connection)->hasTable($baseTableName);
+        $baseTableColumns = $baseTableExists ? $getTableColumns($baseTableName) : [];
+        $baseHasUploadIndex = $baseTableExists && in_array('upload_index', $baseTableColumns, true);
 
         if ($periodFilter) {
             if ($activeRun && $activeRun->period_date) {
                 $candidate = $this->buildStrictVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
                 if (Schema::connection($connection)->hasTable($candidate)) {
-                    $rowsCollection = $collectFromTable($candidate, (int) $activeRun->upload_index);
-                    $tableName = $candidate;
+                    $queries[] = $buildQuery($candidate, (int) $activeRun->upload_index);
                 } else {
                     $uploadIndexFilter = $activeRun->upload_index ?? $legacyActiveIndex;
-                    $rowsCollection = $collectFromTable($baseTableName, $uploadIndexFilter);
-                    $tableName = $baseTableName;
+                    $queries[] = $buildQuery($baseTableName, $uploadIndexFilter, true);
+                    $usedBaseTable = true;
                 }
             } elseif ($legacyActiveIndex !== null) {
-                $rowsCollection = $collectFromTable($baseTableName, $legacyActiveIndex);
-                $tableName = $baseTableName;
+                $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true);
+                $usedBaseTable = true;
             } else {
-                $rowsCollection = $collectFromTable($baseTableName, null);
-                $tableName = $baseTableName;
+                $queries[] = $buildQuery($baseTableName, null, true);
+                $usedBaseTable = true;
             }
         } else {
-            // No filter: show all active periods (latest per period)
+            $needsUnversionedBase = false;
             if ($activeRuns->isEmpty()) {
-                $rowsCollection = $collectFromTable($baseTableName, $legacyActiveIndex);
+                if ($baseTableExists) {
+                    $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true);
+                    $usedBaseTable = true;
+                }
             } else {
                 foreach ($activeRuns as $run) {
                     if (!$run->period_date) {
@@ -571,45 +551,56 @@ class MappingController extends Controller
                     }
                     $candidate = $this->buildStrictVersionTableName($baseTableName, $run->period_date, (int) $run->upload_index);
                     if (Schema::connection($connection)->hasTable($candidate)) {
-                        $rowsCollection = $rowsCollection->merge(
-                            $collectFromTable($candidate, (int) $run->upload_index)
-                        );
-                    } else {
-                        $rowsCollection = $rowsCollection->merge(
-                            $collectFromTable($baseTableName, (int) $run->upload_index)
-                        );
+                        $queries[] = $buildQuery($candidate, (int) $run->upload_index);
+                    } elseif ($baseTableExists) {
+                        if ($baseHasUploadIndex) {
+                            $queries[] = $buildQuery($baseTableName, (int) $run->upload_index);
+                            $usedBaseTable = true;
+                            $needsUnversionedBase = true;
+                        } elseif (!$usedBaseTable) {
+                            $queries[] = $buildQuery($baseTableName, null);
+                            $usedBaseTable = true;
+                        }
                     }
                 }
-                if ($rowsCollection->isEmpty() && Schema::connection($connection)->hasTable($baseTableName)) {
-                    $rowsCollection = $collectFromTable($baseTableName, $legacyActiveIndex);
+                if (empty($queries) && $baseTableExists) {
+                    $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true);
+                    $usedBaseTable = true;
                 }
-            }
-        }
-        if (! $periodFilter && ! $usedBaseTable) {
-            $unversionedRows = $collectUnversionedBase();
-            if ($unversionedRows->isNotEmpty()) {
-                $rowsCollection = $rowsCollection->merge($unversionedRows);
+                if ($baseTableExists && ($needsUnversionedBase || !$usedBaseTable)) {
+                    $queries[] = $buildQuery($baseTableName, null, false, $baseHasUploadIndex);
+                    $usedBaseTable = true;
+                }
             }
         }
 
-        // If still empty and table missing, return error
-        if ($rowsCollection === null) {
+        $queries = array_values(array_filter($queries));
+        if (empty($queries)) {
             return back()->with('error', "Tabel untuk period terpilih tidak ditemukan di koneksi {$connection}.");
         }
 
-        // Manual pagination for merged collections
-        $page = LengthAwarePaginator::resolveCurrentPage();
         $perPage = 50;
-        $total = $rowsCollection->count();
-        $items = $rowsCollection->values()->forPage($page, $perPage);
-        $data = new LengthAwarePaginator($items, $total, $perPage, $page, [
-            'path' => request()->url(),
-            'query' => request()->query(),
-        ]);
+        if (count($queries) === 1) {
+            $data = $queries[0]
+                ->orderByDesc('id')
+                ->paginate($perPage)
+                ->withQueryString();
+        } else {
+            $union = array_shift($queries);
+            foreach ($queries as $query) {
+                $union->unionAll($query);
+            }
+            $data = DB::connection($connection)
+                ->query()
+                ->fromSub($union, 'combined_rows')
+                ->orderByDesc('id')
+                ->paginate($perPage)
+                ->withQueryString();
+        }
 
         return view('view_data', [
             'mapping' => $mapping,
-            'columns' => $validColumns ?: array_values($columnMapping),
+            'columns' => $displayColumns,
             'data' => $data,
             'columnMapping' => $columnMapping,
             'period_date' => $activeRun->period_date ?? $periodFilter,
