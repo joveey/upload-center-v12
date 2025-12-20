@@ -2,9 +2,9 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <div>
-                <h2 class="font-bold text-2xl text-gray-900 leading-tight">Legacy Data Mappings</h2>
+                <h2 class="font-bold text-2xl text-gray-900 leading-tight">Existing Data Mappings</h2>
                 <p class="mt-1 text-sm text-gray-600">
-                    Menampilkan hanya tabel legacy yang belum diregister; langsung mapping-kan tabel baru dari sini.
+                    Menampilkan hanya tabel existing yang belum diregister; langsung mapping-kan tabel baru dari sini.
                 </p>
                 @if(!empty($search ?? ''))
                     <p class="mt-1 text-xs text-[#0057b7] font-semibold">Filter: "{{ $search }}"</p>
@@ -49,8 +49,8 @@
                                 </svg>
                             </div>
                             <div>
-                                <p class="text-sm text-[#d8e7f7]">Legacy / Unregistered tables</p>
-                                <h3 class="text-xl font-semibold">Daftar Tabel Legacy</h3>
+                                <p class="text-sm text-[#d8e7f7]">Existing / Unregistered tables</p>
+                                <h3 class="text-xl font-semibold">Daftar Tabel Existing</h3>
                             </div>
                         </div>
                         <div class="text-sm text-[#d8e7f7]">
@@ -117,7 +117,7 @@
                                 @empty
                                     <tr>
                                         <td colspan="4" class="px-4 py-6 text-center text-sm text-gray-600">
-                                            Semua tabel legacy sudah diregister atau tidak ditemukan.
+                                            Semua tabel existing sudah diregister atau tidak ditemukan.
                                         </td>
                                     </tr>
                                 @endforelse

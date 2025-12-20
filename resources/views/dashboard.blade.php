@@ -91,7 +91,7 @@
                                     <p class="text-2xl font-bold text-gray-900">{{ number_format($stats['total_formats'] ?? 0) }}</p>
                                 </div>
                             </div>
-                            <div class="text-xs px-3 py-1 rounded-full bg-[#e8f1fb] text-[#0057b7] border border-[#c7d9f3]">Legacy: {{ number_format($stats['legacy_formats'] ?? 0) }}</div>
+                            <div class="text-xs px-3 py-1 rounded-full bg-[#e8f1fb] text-[#0057b7] border border-[#c7d9f3]">Existing: {{ number_format($stats['legacy_formats'] ?? 0) }}</div>
                         </div>
                         <div class="grid grid-cols-2 gap-3 mt-4 text-sm">
                             <div class="p-3 bg-gray-50 rounded-xl border border-gray-200">

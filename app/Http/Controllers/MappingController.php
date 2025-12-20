@@ -2349,13 +2349,10 @@ class MappingController extends Controller
             }
             $useUploadIndex = ($uploadMode === 'strict');
             $legacyIndexMeta = $useUploadIndex ? $this->detectLegacyIndexTable($mainTableName, $connection) : null;
-            $useInlineIndexTable = $useUploadIndex && $legacyIndexMeta !== null;
+            $useInlineIndexTable = $useUploadIndex && ($legacyIndexMeta !== null || $this->isLegacyConnectionName($connection));
             $existingIndexCeiling = $useUploadIndex
                 ? $this->getExistingUploadIndexCeiling($mainTableName, $connection, $periodDate)
                 : null;
-            if ($useUploadIndex && !$hasPeriodDate) {
-                $hasPeriodDate = true;
-            }
 
             if ($useUploadIndex) {
                 if (empty($validated['period_date'])) {
@@ -2390,10 +2387,13 @@ class MappingController extends Controller
                 $this->reseedStrictVersionIdentity($mainTableName, $versionTableName, $connection);
                 $targetTableName = $versionTableName;
             } elseif ($useUploadIndex && $useInlineIndexTable) {
-                Log::info('Using inline upload_index versioning on base table (legacy *_INDEX detected)', [
+                Log::info('Using inline upload_index versioning on base table', [
                     'table' => $mainTableName,
                     'upload_index' => $uploadIndexValue,
                 ]);
+            }
+            if ($useUploadIndex && ! $useInlineIndexTable) {
+                $hasPeriodDate = true;
             }
 
             // Determine sheet (use provided or first)
@@ -3067,7 +3067,7 @@ class MappingController extends Controller
         }
 
         $legacyIndexMeta = $this->detectLegacyIndexTable($baseTableName, $connection);
-        $useInlineIndexTable = $legacyIndexMeta !== null;
+        $useInlineIndexTable = $legacyIndexMeta !== null || $this->isLegacyConnectionName($connection);
         if ($useInlineIndexTable) {
             $this->ensureUploadIndexColumn($baseTableName, $connection);
         }
@@ -3139,6 +3139,55 @@ class MappingController extends Controller
 
             // 6. INSERT DATA
             $columnMapping = $mapping->columns->pluck('table_column_name', 'excel_column_index')->toArray();
+            $schema = Schema::connection($connection);
+            $targetColumns = $schema->getColumnListing($targetTableName);
+            $targetColumnMap = array_fill_keys($targetColumns, true);
+            $targetColumnTypes = [];
+            foreach ($targetColumns as $col) {
+                try {
+                    $targetColumnTypes[$col] = $schema->getColumnType($targetTableName, $col);
+                } catch (\Throwable $e) {
+                    $targetColumnTypes[$col] = null;
+                }
+            }
+            $numericTypes = ['integer', 'bigint', 'smallint', 'tinyint', 'decimal', 'float', 'double'];
+            $dateTypes = ['date', 'datetime', 'datetimetz', 'timestamp'];
+            $normalizeNumeric = function ($value, string $type) {
+                if ($value === null || $value === '') {
+                    return null;
+                }
+                if (is_string($value)) {
+                    $value = trim($value);
+                    if ($value === '') {
+                        return null;
+                    }
+                    $hasDot = str_contains($value, '.');
+                    $hasComma = str_contains($value, ',');
+                    if ($hasComma && !$hasDot) {
+                        $value = str_replace('.', '', $value);
+                        $value = str_replace(',', '.', $value);
+                    } elseif ($hasComma) {
+                        $value = str_replace(',', '', $value);
+                    }
+                }
+                if (!is_numeric($value)) {
+                    return null;
+                }
+                if (in_array($type, ['integer', 'bigint', 'smallint', 'tinyint'], true)) {
+                    return (int) $value;
+                }
+                return (float) $value;
+            };
+            $normalizeDate = function ($value) {
+                if ($value === null || $value === '') {
+                    return null;
+                }
+                $converted = $this->convertExcelDate($value);
+                if (is_string($converted) && preg_match('/^\\d{4}-\\d{2}-\\d{2}/', $converted)) {
+                    return $converted;
+                }
+                return null;
+            };
             $rowsToInsert = [];
             $batchSize = 1000;
             $rows = $sheet->toArray(null, true, true, true);
@@ -3151,22 +3200,47 @@ class MappingController extends Controller
                 $hasValue = false;
                 foreach ($columnMapping as $excelCol => $dbCol) {
                     $val = $rowValues[$excelCol] ?? null;
+                    if (is_string($val)) {
+                        $val = trim($val);
+                        if ($val === '') {
+                            $val = null;
+                        }
+                    }
                     if ($val !== null && $val !== '') $hasValue = true;
 
                     if (in_array($dbCol, ['period', 'period_date', 'periode', 'period_dt', 'perioddate'], true)) {
                         // Always override period in strict mode to the selected period to avoid accidental skips
                         $val = $periodDate;
+                    } else {
+                        $colType = $targetColumnTypes[$dbCol] ?? null;
+                        if ($colType && in_array($colType, $numericTypes, true)) {
+                            $val = $normalizeNumeric($val, $colType);
+                        } elseif ($colType && in_array($colType, $dateTypes, true)) {
+                            $val = $normalizeDate($val);
+                        }
                     }
                     $record[$dbCol] = $val;
                 }
 
                 if (!$hasValue) continue;
 
-                $record[$periodColumnName] = $periodDate;
-                $record['upload_index'] = $uploadIndex;
-                $record['is_active'] = 1;
-                $record['created_at'] = $timestamp;
-                $record['updated_at'] = $timestamp;
+                if (isset($targetColumnMap[$periodColumnName])) {
+                    $record[$periodColumnName] = $periodDate;
+                }
+                if (isset($targetColumnMap['upload_index'])) {
+                    $record['upload_index'] = $uploadIndex;
+                }
+                if (isset($targetColumnMap['is_active'])) {
+                    $record['is_active'] = 1;
+                }
+                if (isset($targetColumnMap['created_at'])) {
+                    $record['created_at'] = $timestamp;
+                }
+                if (isset($targetColumnMap['updated_at'])) {
+                    $record['updated_at'] = $timestamp;
+                }
+
+                $record = array_intersect_key($record, $targetColumnMap);
 
                 $rowsToInsert[] = $record;
             }

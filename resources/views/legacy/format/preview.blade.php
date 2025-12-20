@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <div>
-                <h2 class="font-bold text-2xl text-gray-900 leading-tight">Preview Data Legacy</h2>
+                <h2 class="font-bold text-2xl text-gray-900 leading-tight">Preview Data Existing</h2>
                 <p class="mt-1 text-sm text-gray-600">
                     Table: <code class="text-xs">{{ $tableName }}</code>
                     @if(!empty($legacyDbName ?? ''))
@@ -43,7 +43,7 @@
                                 </svg>
                             </div>
                             <div>
-                                <p class="text-sm text-[#d8e7f7]">Legacy / Preview</p>
+                                <p class="text-sm text-[#d8e7f7]">Existing / Preview</p>
                                 <h3 class="text-xl font-semibold">Data untuk {{ $tableName }}</h3>
                             </div>
                         </div>
@@ -118,7 +118,7 @@
                                 @empty
                                     <tr>
                                         <td colspan="{{ count($columns) + ($showIdColumn ? 1 : 0) }}" class="px-4 py-6 text-center text-sm text-gray-600">
-                                            Tidak ada data legacy untuk tabel ini.
+                                            Tidak ada data existing untuk tabel ini.
                                         </td>
                                     </tr>
                                 @endforelse

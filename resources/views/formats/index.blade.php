@@ -180,7 +180,7 @@
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-6 py-3">
                                         <div class="font-semibold text-gray-900">{{ $mapping->description ?? $mapping->code }}</div>
-                                        <div class="text-xs text-gray-500 mt-1">Dibuat oleh: {{ $mapping->is_legacy_source ? 'Legacy' : (optional($mapping->division)->name ?? 'Legacy') }}</div>
+                                        <div class="text-xs text-gray-500 mt-1">Dibuat oleh: {{ $mapping->is_legacy_source ? 'Existing' : (optional($mapping->division)->name ?? 'Existing') }}</div>
                                     </td>
                                     <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ $mapping->code }}</td>
                                     <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ $mapping->table_name }}</td>
@@ -201,7 +201,7 @@
                                     </td>
                                     <td class="px-4 py-3">
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full {{ $mapping->is_legacy_source ? 'bg-yellow-50 text-yellow-800 border border-yellow-100' : 'bg-sky-50 text-sky-800 border border-sky-100' }} text-xs">
-                                            {{ $mapping->is_legacy_source ? 'Legacy' : (optional($mapping->division)->name ?? '-') }}
+                                            {{ $mapping->is_legacy_source ? 'Existing' : (optional($mapping->division)->name ?? '-') }}
                                         </span>
                                     </td>
                                     <td class="px-6 py-3">

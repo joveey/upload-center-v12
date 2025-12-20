@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <div>
-                <h2 class="font-bold text-2xl text-gray-900 leading-tight">Legacy Format Data</h2>
+                <h2 class="font-bold text-2xl text-gray-900 leading-tight">Existing Format Data</h2>
                 <p class="mt-1 text-sm text-gray-600">
                     Mapping: <span class="font-semibold text-gray-800">{{ $mapping->description ?? $mapping->code }}</span> —
                     Table: <code class="text-xs">{{ $mapping->table_name }}</code>
@@ -26,7 +26,7 @@
                                 </svg>
                             </div>
                             <div>
-                                <p class="text-sm text-[#d8e7f7]">Legacy / Mapping-driven</p>
+                                <p class="text-sm text-[#d8e7f7]">Existing / Mapping-driven</p>
                                 <h3 class="text-xl font-semibold">Data untuk {{ $mapping->description ?? $mapping->code }}</h3>
                             </div>
                         </div>
@@ -100,7 +100,7 @@
                                 @empty
                                     <tr>
                                         <td colspan="{{ count($columns) + ($showIdColumn ? 1 : 0) }}" class="px-4 py-6 text-center text-sm text-gray-600">
-                                            Tidak ada data legacy untuk mapping ini.
+                                            Tidak ada data existing untuk mapping ini.
                                         </td>
                                     </tr>
                                 @endforelse
