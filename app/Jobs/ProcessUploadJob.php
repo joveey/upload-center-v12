@@ -25,13 +25,16 @@ class ProcessUploadJob implements ShouldQueue
 
     public function handle(UploadPipelineService $pipeline, UploadIndexService $uploadIndexService): void
     {
-        $run = UploadRun::find($this->uploadRunId);
+        $controlConnection = config('database.control_connection', env('DB_CONNECTION', config('database.default')));
+        \Illuminate\Support\Facades\DB::setDefaultConnection($controlConnection);
+
+        $run = UploadRun::on($controlConnection)->find($this->uploadRunId);
         if (! $run) {
             Log::warning('UploadRun not found for job', ['run_id' => $this->uploadRunId]);
             return;
         }
 
-        $run->update([
+        $run->setConnection($controlConnection)->update([
             'status' => 'processing',
             'progress_percent' => 5,
             'started_at' => now(),
@@ -40,7 +43,7 @@ class ProcessUploadJob implements ShouldQueue
         try {
             $pipeline->run($run, $uploadIndexService);
 
-            $run->update([
+            $run->setConnection($controlConnection)->update([
                 'status' => 'success',
                 'progress_percent' => 100,
                 'finished_at' => now(),
@@ -51,7 +54,7 @@ class ProcessUploadJob implements ShouldQueue
                 'run_id' => $run->id,
                 'error' => $friendly,
             ]);
-            $run->update([
+            $run->setConnection($controlConnection)->update([
                 'status' => 'failed',
                 'message' => $friendly,
                 'progress_percent' => 0,

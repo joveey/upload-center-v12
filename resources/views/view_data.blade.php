@@ -252,7 +252,11 @@
         <div class="flex items-start justify-between mb-4">
             <div>
                 <h3 class="text-xl font-bold text-gray-900" id="exportModalTitle">Export Data</h3>
-                <p class="text-sm text-gray-600 mt-1">Pilih periode (tanggal selalu 1).</p>
+                @if($hasPeriodColumn)
+                    <p class="text-sm text-gray-600 mt-1">Pilih periode (tanggal selalu 1).</p>
+                @else
+                    <p class="text-sm text-gray-600 mt-1">Ekspor data tanpa filter periode.</p>
+                @endif
             </div>
             <button type="button" id="btn-export-close" class="text-gray-500 hover:text-gray-800">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -261,15 +265,21 @@
             </button>
         </div>
         <form id="exportForm" method="GET">
-            <div class="mb-4">
-                <label class="block text-sm font-semibold text-gray-800 mb-1">Periode</label>
-                <select name="period_date" class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
-                    @foreach($exportPeriods as $opt)
-                        <option value="{{ $opt['value'] }}">{{ $opt['label'] }} ({{ $opt['value'] }})</option>
-                    @endforeach
-                </select>
-                <p class="text-xs text-gray-500 mt-1">Opsi sudah otomatis tanggal 1 setiap bulan.</p>
-            </div>
+            @if($hasPeriodColumn)
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold text-gray-800 mb-1">Periode</label>
+                    <select name="period_date" class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
+                        @foreach($exportPeriods as $opt)
+                            <option value="{{ $opt['value'] }}">{{ $opt['label'] }} ({{ $opt['value'] }})</option>
+                        @endforeach
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Opsi sudah otomatis tanggal 1 setiap bulan.</p>
+                </div>
+            @else
+                <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p class="text-sm text-blue-800">Format ini tidak memiliki kolom periode. Semua data akan diekspor.</p>
+                </div>
+            @endif
             <div class="flex items-center justify-end space-x-3">
                 <button type="button" id="btn-export-cancel" class="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">Batal</button>
                 <button type="submit" class="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] rounded-lg">Download</button>
@@ -408,14 +418,16 @@
 
         // Ensure export form submits normally after validation
         exportForm?.addEventListener('submit', (e) => {
-            const dateInput = exportForm.querySelector('input[name="period_date"]');
-            if (!dateInput?.value) {
-                e.preventDefault();
-                alert('Silakan pilih periode terlebih dahulu.');
-                return;
-            }
+            @if($hasPeriodColumn)
+                const dateSelect = exportForm.querySelector('select[name="period_date"]');
+                if (!dateSelect?.value) {
+                    e.preventDefault();
+                    alert('Silakan pilih periode terlebih dahulu.');
+                    return;
+                }
+            @endif
             closeExport();
-            // allow normal GET submit with period_date input included
+            // allow normal GET submit
         });
     });
 </script>

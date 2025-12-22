@@ -102,7 +102,7 @@
                                 <tr>
                                     <th class="px-3 py-2 text-left">Excel</th>
                                     <th class="px-3 py-2 text-left">Database</th>
-                                    <th class="px-3 py-2 text-left">Unique</th>
+                                    <th class="px-3 py-2 text-left">Unique Key</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">
@@ -111,18 +111,18 @@
                                         <td class="px-3 py-2 font-mono text-xs text-gray-700">{{ $col->excel_column_index }}</td>
                                         <td class="px-3 py-2 font-mono text-xs text-gray-800">{{ $col->table_column_name }}</td>
                                         <td class="px-3 py-2">
-                                            @if($col->is_unique_key)
-                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Ya</span>
-                                            @else
-                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">-</span>
-                                            @endif
+                                            <input type="hidden" name="existing_columns[{{ $col->id }}][present]" value="1">
+                                            <label class="inline-flex items-center space-x-2 text-xs font-semibold text-gray-700">
+                                                <input type="checkbox" name="existing_columns[{{ $col->id }}][is_unique_key]" value="1" {{ $col->is_unique_key ? 'checked' : '' }} class="rounded text-[#0057b7] focus:ring-[#0057b7]">
+                                                <span>Unique</span>
+                                            </label>
                                         </td>
                                     </tr>
                                 @endforeach
                             </tbody>
                         </table>
                     </div>
-                    <p class="text-xs text-gray-500 mt-3">Kolom lama tidak diubah. Upload berikutnya otomatis membawa kolom baru.</p>
+                    <p class="text-xs text-gray-500 mt-3">Tandai kolom lama sebagai unique key jika diperlukan. Kolom baru yang ditambahkan di atas juga dapat ditandai unique.</p>
                 </div>
             </div>
         </div>

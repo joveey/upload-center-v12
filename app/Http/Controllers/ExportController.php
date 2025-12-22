@@ -25,8 +25,7 @@ class ExportController extends Controller
 
         $user = Auth::user(); 
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
-        $periodFilter = $request->query('period_date');
-
+        
         // Export dibuka untuk semua user yang login; pembatasan hanya untuk aksi hapus.
 
         $baseTableName = $mapping->table_name;
@@ -40,10 +39,35 @@ class ExportController extends Controller
             $connection = 'sqlsrv_legacy';
         }
 
+        // Detect period column from actual table schema FIRST
+        $actualTableColumns = Schema::connection($connection)->getColumnListing($baseTableName);
+        $periodColumn = null;
+        foreach (['period', 'period_date', 'periode', 'period_dt', 'perioddate', 'periodo', 'per_date', 'period_code', 'priod'] as $candidate) {
+            if (in_array($candidate, $actualTableColumns)) {
+                $periodColumn = $candidate;
+                break;
+            }
+        }
+
+        // Detect index column (upload_index or index_id)
+        $indexColumn = null;
+        if (in_array('index_id', $actualTableColumns, true)) {
+            $indexColumn = 'index_id';
+        } elseif (in_array('upload_index', $actualTableColumns, true)) {
+            $indexColumn = 'upload_index';
+        }
+
+        // Get period filter from request (could be period_date or other names, but we filter by detected column)
+        $periodFilter = $request->query('period_date') ?? $request->query('period');
+        $indexIdFilter = $request->query('index_id');
+        $rowLimit = $request->query('limit') ? (int) $request->query('limit') : null;
+
         $tableName = $baseTableName;
         $activeRun = null;
         $legacyActiveIndex = null;
-        if ($periodFilter) {
+        
+        // Priority 1: Filter by period if available
+        if ($periodFilter && $periodColumn) {
             $periodRun = DB::table('mapping_upload_runs')
                 ->where('mapping_index_id', $mapping->id)
                 ->where('period_date', $periodFilter)
@@ -53,6 +77,11 @@ class ExportController extends Controller
             if ($periodRun) {
                 $activeRun = (object) $periodRun;
             }
+        }
+        
+        // Priority 2: Filter by index_id if no period
+        if (!$activeRun && $indexIdFilter && $indexColumn) {
+            // This will be used later in the filter
         }
 
         // Fallback to active run (latest) if none matched the requested period
@@ -81,17 +110,15 @@ class ExportController extends Controller
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
         }
 
-        $actualTableColumns = Schema::connection($connection)->getColumnListing($tableName);
-
-        // Determine period column (period_date or legacy aliases)
-        $periodColumn = null;
-        foreach (['period', 'period_date', 'periode', 'period_dt', 'perioddate'] as $candidate) {
-            if (in_array($candidate, $actualTableColumns)) {
-                $periodColumn = $candidate;
-                break;
-            }
+        // Note: $actualTableColumns already fetched above
+        $versionColumn = in_array('index_id', $actualTableColumns, true)
+            ? 'index_id'
+            : (in_array('upload_index', $actualTableColumns, true) ? 'upload_index' : null);
+        if ($versionColumn) {
+            $columnMapping = array_filter($columnMapping, fn($col) => $col !== $versionColumn);
         }
 
+        // Note: $periodColumn already detected above
         // Remove duplicate period-like columns except the chosen one
         if ($periodColumn) {
             $periodAliases = ['period', 'period_date', 'periode', 'period_dt', 'perioddate'];
@@ -138,15 +165,25 @@ class ExportController extends Controller
             }
         }
         
+        // Filter by index_id if no period column and index_id filter provided
+        if (!$periodColumn && !$periodFilter && $indexIdFilter && $indexColumn) {
+            $query->where($indexColumn, $indexIdFilter);
+        }
+        
         if (!$this->userHasRole($user, 'superuser')) {
             if (in_array('division_id', $actualTableColumns)) {
                 $query->where('division_id', $user->division_id);
             }
         }
         
-        // TAMBAHAN: Filter by period if provided
-        if ($periodColumn && $request->has('period_date') && $request->period_date) {
-            $query->whereDate($periodColumn, $request->period_date);
+        // Filter by period if provided and period column was detected
+        if ($periodColumn && $periodFilter) {
+            $query->whereDate($periodColumn, $periodFilter);
+        }
+        
+        // Apply row limit if no period and no index_id filters (safety limit)
+        if (!$periodFilter && !$indexIdFilter && $rowLimit) {
+            $query->limit($rowLimit);
         }
 
         $includeBaseFallback = $tableName !== $baseTableName
@@ -164,8 +201,12 @@ class ExportController extends Controller
             if (!$this->userHasRole($user, 'superuser') && in_array('division_id', $baseColumns, true)) {
                 $unversionedQuery->where('division_id', $user->division_id);
             }
-            if ($periodColumn && in_array($periodColumn, $baseColumns, true) && $request->has('period_date') && $request->period_date) {
-                $unversionedQuery->whereDate($periodColumn, $request->period_date);
+            if ($periodColumn && in_array($periodColumn, $baseColumns, true) && $periodFilter) {
+                $unversionedQuery->whereDate($periodColumn, $periodFilter);
+            }
+            // Filter by index_id if applicable
+            if (!$periodColumn && !$periodFilter && $indexIdFilter && $indexColumn && in_array($indexColumn, $baseColumns, true)) {
+                $unversionedQuery->where($indexColumn, $indexIdFilter);
             }
         }
 
@@ -266,28 +307,22 @@ class ExportController extends Controller
         @ini_set('memory_limit', '512M');
 
         $mapping = MappingIndex::with('columns')->findOrFail($mappingId);
-        $columns = $mapping->columns;
+        // Filter out versioning columns (index_id/upload_index) so template starts from col A without gaps
+        $columns = $mapping->columns->filter(function ($col) {
+            return !in_array($col->table_column_name, ['index_id', 'upload_index'], true);
+        });
 
         if ($columns->isEmpty()) {
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
         }
 
-        // Build ordered map: numeric index (0-based) => column model
-        $orderedColumns = [];
-        $maxIndex = 0;
-        foreach ($columns as $col) {
-            $index = $this->columnLetterToIndex($col->excel_column_index);
-            $orderedColumns[$index] = $col;
-            $maxIndex = max($maxIndex, $index);
-        }
+        // Build ordered map without gaps and without version columns
+        $orderedColumns = $columns->sortBy(function ($col) {
+            return $this->columnLetterToIndex($col->excel_column_index);
+        })->values();
 
-        // Prepare header row respecting gaps between Excel columns (A, C, etc.)
-        $headerCells = [];
-        for ($i = 0; $i <= $maxIndex; $i++) {
-            $headerCells[] = isset($orderedColumns[$i])
-                ? $orderedColumns[$i]->table_column_name
-                : '';
-        }
+        // Prepare contiguous header row starting at column A
+        $headerCells = $orderedColumns->pluck('table_column_name')->all();
 
         $headerRowNumber = max(1, (int) $mapping->header_row);
         $blankRow = array_fill(0, max(1, count($headerCells)), '');
@@ -321,7 +356,6 @@ class ExportController extends Controller
             $writer->addRow(Row::fromValues([])); // spacer
             $writer->addRow(Row::fromValues(['Kolom', 'Posisi Excel', 'Tipe Data', 'Wajib?', 'Kunci Unik?'], $headerStyle));
 
-            ksort($orderedColumns);
             foreach ($orderedColumns as $col) {
                 $writer->addRow(Row::fromValues([
                     $col->table_column_name,
@@ -382,7 +416,7 @@ class ExportController extends Controller
         }
 
         $periodColumn = collect($columns)->first(function ($col) {
-            return in_array(strtolower($col), ['period_date', 'period', 'periode'], true);
+            return in_array(strtolower($col), ['period_date', 'period', 'periode', 'period_dt', 'periodo', 'per_date', 'period_code'], true);
         });
 
         return [

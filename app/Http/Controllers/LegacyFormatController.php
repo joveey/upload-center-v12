@@ -14,6 +14,19 @@ use Illuminate\Support\Str;
 
 class LegacyFormatController extends Controller
 {
+    /**
+     * Get the control connection for querying mapping_indices
+     */
+    private function getControlConnection(): string
+    {
+        $controlConnection = config('database.control_connection', config('database.default'));
+        $isLegacy = fn($name) => $name === 'sqlsrv_legacy' || ($name && str_starts_with($name, 'legacy_'));
+        if (! $controlConnection || $isLegacy($controlConnection)) {
+            $controlConnection = config('database.connections.sqlsrv') ? 'sqlsrv' : config('database.default');
+        }
+        return $controlConnection;
+    }
+
     public function list(Request $request)
     {
         abort_unless($request->user(), 403);
@@ -33,7 +46,7 @@ class LegacyFormatController extends Controller
         ));
 
         // Ambil mapping yang sudah terdaftar, di-key per nama tabel
-        $registeredMappings = MappingIndex::with('division')->get()->groupBy(function ($mapping) {
+        $registeredMappings = MappingIndex::on($this->getControlConnection())->with('division')->get()->groupBy(function ($mapping) {
             $tableKey = strtolower($mapping->table_name ?? '');
             $connectionKey = strtolower((string) ($mapping->connection ?? ''));
             return $connectionKey !== '' ? "{$connectionKey}|{$tableKey}" : $tableKey;
@@ -49,11 +62,15 @@ class LegacyFormatController extends Controller
                 $mapping = $registeredMappings->get($key);
             }
             $mapping = $mapping ? $mapping->first() : null;
+            
+            // Check jika table punya companion _INDEX table (sudah di-setup untuk versioning)
+            $hasIndexTable = Schema::connection($legacyConnection)->hasTable($tableName . '_INDEX');
 
             return (object) [
                 'table_name' => $tableName,
                 'schema' => $row->schema_name ?? 'dbo',
                 'is_mapped' => (bool) $mapping,
+                'has_index_table' => $hasIndexTable,
                 'code' => $mapping->code ?? null,
                 'description' => $mapping->description ?? null,
                 'mapping_id' => $mapping->id ?? null,
@@ -61,9 +78,17 @@ class LegacyFormatController extends Controller
             ];
         });
 
-        // Sembunyikan tabel yang sudah dimapping agar daftar hanya berisi tabel legacy yang belum ter-register.
+        // Sembunyikan tabel yang sudah dimapping dan tabel _INDEX companion itu sendiri
         $collection = $collection->filter(function ($item) {
-            return ! $item->is_mapped;
+            // Jangan show jika sudah dimapping
+            if ($item->is_mapped) {
+                return false;
+            }
+            // Jangan show jika table ini sendiri adalah _INDEX companion (ends with _INDEX)
+            if (str_ends_with($item->table_name, '_INDEX')) {
+                return false;
+            }
+            return true;
         })->values();
 
         if ($search !== '') {
@@ -216,7 +241,8 @@ class LegacyFormatController extends Controller
         }
 
         // Jika sudah ada, langsung arahkan ke halaman legacy format.
-        if ($existing = MappingIndex::where('table_name', $tableName)->first()) {
+        $controlConnection = $this->getControlConnection();
+        if ($existing = MappingIndex::on($controlConnection)->where('table_name', $tableName)->first()) {
             if (Schema::hasColumn('mapping_indices', 'connection') && empty($existing->connection)) {
                 $existing->connection = $legacyConnection;
                 $existing->save();
@@ -241,10 +267,11 @@ class LegacyFormatController extends Controller
 
         $code = $baseCode;
         $suffix = 2;
-        while (MappingIndex::where('code', $code)->exists()) {
+        while (MappingIndex::on($controlConnection)->where('code', $code)->exists()) {
             $code = "{$baseCode}_{$suffix}";
             $suffix++;
         }
+
 
         $payload = [
             'division_id' => $divisionId,

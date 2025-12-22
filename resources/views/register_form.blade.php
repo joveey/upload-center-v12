@@ -105,6 +105,7 @@
                                         <option value="" {{ old('upload_mode') === null ? 'selected' : '' }}>Pilih saat upload (default)</option>
                                         <option value="upsert" {{ old('upload_mode') === 'upsert' ? 'selected' : '' }}>Upsert (gabung kunci unik)</option>
                                         <option value="strict" {{ old('upload_mode') === 'strict' ? 'selected' : '' }}>Strict (replace per period)</option>
+                                        <option value="replace_all" {{ old('upload_mode') === 'replace_all' ? 'selected' : '' }}>Replace All (ganti semua data)</option>
                                     </select>
                                     <p class="mt-1.5 text-xs text-gray-600">Jika dikosongkan, user akan memilih mode (upsert/strict) saat upload.</p>
                                 </div>

@@ -38,22 +38,90 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="mb-6 space-y-3">
                 @if (session('success'))
-                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
-                        <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center mr-4">
-                            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                            </svg>
+                    @php
+                        $details = session('success_details');
+                    @endphp
+                    @if($details && isset($details['format_name']))
+                        {{-- Enhanced success notification for format registration --}}
+                        <div class="bg-gradient-to-r from-green-50 via-emerald-50 to-green-50 border-l-4 border-green-500 rounded-xl shadow-lg p-6 flex items-start animate-slide-down" role="alert">
+                            <div class="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center mr-4 shadow-md">
+                                <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <span class="font-bold text-green-900 text-lg block mb-1">🎉 Format Berhasil Didaftarkan!</span>
+                                <p class="text-green-800 text-sm font-medium mb-3">{{ session('success') }}</p>
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-green-200">
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                                        </svg>
+                                        <div class="text-xs">
+                                            <span class="text-green-700 font-semibold">{{ $details['format_name'] }}</span>
+                                            <p class="text-green-600 text-xs">Format Name</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2m-9 4h12M5 9h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V11a2 2 0 012-2z"></path>
+                                        </svg>
+                                        <div class="text-xs">
+                                            <span class="text-green-700 font-semibold">{{ $details['table_name'] }}</span>
+                                            <p class="text-green-600 text-xs">Table</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                        <div class="text-xs">
+                                            <span class="text-green-700 font-semibold">{{ $details['columns_count'] }}</span>
+                                            <p class="text-green-600 text-xs">Columns</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+                                        </svg>
+                                        <div class="text-xs">
+                                            <span class="text-green-700 font-semibold capitalize">{{ $details['upload_mode'] ?? 'Auto' }}</span>
+                                            <p class="text-green-600 text-xs">Upload Mode</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-4 flex items-center space-x-2 text-xs text-green-700">
+                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>Siap untuk menerima upload data Excel!</span>
+                                </div>
+                            </div>
+                            <button onclick="this.parentElement.remove()" class="ml-4 text-green-500 hover:text-green-700 transition-colors flex-shrink-0">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
                         </div>
-                        <div class="flex-1">
-                            <span class="font-bold text-green-800 text-lg">Berhasil!</span>
-                            <p class="text-green-700 text-sm mt-1">{{ session('success') }}</p>
+                    @else
+                        {{-- Fallback for other success messages --}}
+                        <div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
+                            <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center mr-4">
+                                <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <span class="font-bold text-green-800 text-lg">Berhasil!</span>
+                                <p class="text-green-700 text-sm mt-1">{{ session('success') }}</p>
+                            </div>
+                            <button onclick="this.parentElement.remove()" class="ml-4 text-green-500 hover:text-green-700 transition-colors">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
                         </div>
-                        <button onclick="this.parentElement.remove()" class="ml-4 text-green-500 hover:text-green-700 transition-colors">
-                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                            </svg>
-                        </button>
-                    </div>
+                    @endif
                 @endif
                 @if (session('error'))
                     <div class="bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
@@ -73,6 +141,33 @@
                         </button>
                     </div>
                 @endif
+            </div>
+
+            {{-- Quick Search Bar --}}
+            <div class="mb-6">
+                <form method="GET" action="{{ route('formats.index') }}" class="flex gap-3">
+                    <div class="flex-1">
+                        <div class="flex items-center bg-white border border-gray-300 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 focus-within:ring-2 focus-within:ring-[#0057b7] focus-within:ring-opacity-50 focus-within:border-[#0057b7]">
+                            <svg class="w-5 h-5 text-gray-400 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            <input 
+                                type="text" 
+                                name="q" 
+                                placeholder="Cari format..." 
+                                class="flex-1 bg-white border-0 focus:ring-0 focus:outline-none py-3 px-4 text-sm placeholder-gray-400"
+                            >
+                        </div>
+                    </div>
+                    <button 
+                        type="submit" 
+                        class="px-5 py-3 bg-[#0057b7] hover:bg-[#004a99] text-white font-medium text-sm rounded-xl transition-colors duration-200 shadow-sm hover:shadow-md flex items-center"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </button>
+                </form>
             </div>
 
             {{-- Admin stats and alerts --}}
@@ -268,6 +363,7 @@
                             <label for="upload_mode_direct" class="block text-sm font-semibold text-gray-700">Mode Upload Langsung</label>
                             <select id="upload_mode_direct" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 focus:ring-opacity-50">
                                 <option value="strict">Strict (replace period)</option>
+                                <option value="replace_all">Replace All (ganti semua data)</option>
                                 <option value="upsert">Upsert (gabung kunci unik)</option>
                             </select>
                             <p id="upload_mode_direct_hint" class="text-xs text-gray-500"></p>
@@ -469,6 +565,9 @@
         let pendingSubmit = null;
 
         document.addEventListener('DOMContentLoaded', function() {
+            const mappingData = @json($mappingDataForJs);
+            
+            // ===== Original Mapping Combo Logic =====
             const fileInput = document.getElementById('data_file');
             const fileName = document.getElementById('file-name');
             const dropZone = document.getElementById('drop-zone');
@@ -476,7 +575,6 @@
             const mappingCombo = document.getElementById('mapping_search_combo');
             const mappingHidden = document.getElementById('mapping_id_hidden');
             const mappingDropdown = document.getElementById('mapping_dropdown');
-            const mappingData = @json($mappingDataForJs);
             const createFormatUrl = '{{ route("mapping.register.form") }}';
             const directUploadButton = document.getElementById('directUploadButton');
             const uploadModeDirect = document.getElementById('upload_mode_direct');
@@ -497,9 +595,12 @@
                         uploadModeDirect.disabled = true;
                         uploadModeDirect.classList.add('bg-gray-100', 'cursor-not-allowed');
                         if (uploadModeDirectHint) {
-                            const label = lockedUploadMode === 'strict'
-                                ? 'Strict (replace period)'
-                                : 'Upsert (update/insert)';
+                            let label = 'Upsert (update/insert)';
+                            if (lockedUploadMode === 'strict') {
+                                label = 'Strict (replace period)';
+                            } else if (lockedUploadMode === 'replace_all') {
+                                label = 'Replace All (ganti semua data)';
+                            }
                             uploadModeDirectHint.textContent = `Mode upload dikunci ke ${label} untuk format ini.`;
                             uploadModeDirectHint.classList.remove('hidden');
                         }

@@ -162,65 +162,65 @@
                     <span class="text-xs text-white/80">Total: {{ $mappings instanceof \Illuminate\Pagination\LengthAwarePaginator ? $mappings->total() : $mappings->count() }}</span>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
+                    <table class="w-full text-sm">
                         <thead class="bg-gray-50 text-gray-700 font-semibold border-b border-gray-200">
-                            <tr>
-                                <th class="px-6 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Format & Info</th>
-                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Kode</th>
-                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Tabel</th>
-                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Kolom</th>
-                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Baris</th>
-                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Header</th>
-                                <th class="px-4 py-3 text-left uppercase tracking-wide text-xs text-gray-500">Divisi</th>
-                                <th class="px-6 py-3 text-right uppercase tracking-wide text-xs text-gray-500">Aksi</th>
+                            <tr class="h-12">
+                                <th class="px-6 py-0 text-left uppercase tracking-wide text-xs text-gray-600 font-semibold">Format & Info</th>
+                                <th class="px-4 py-0 text-left uppercase tracking-wide text-xs text-gray-600 font-semibold">Kode</th>
+                                <th class="px-4 py-0 text-left uppercase tracking-wide text-xs text-gray-600 font-semibold">Tabel</th>
+                                <th class="px-4 py-0 text-left uppercase tracking-wide text-xs text-gray-600 font-semibold">Kolom</th>
+                                <th class="px-4 py-0 text-left uppercase tracking-wide text-xs text-gray-600 font-semibold">Baris</th>
+                                <th class="px-4 py-0 text-left uppercase tracking-wide text-xs text-gray-600 font-semibold">Header</th>
+                                <th class="px-4 py-0 text-left uppercase tracking-wide text-xs text-gray-600 font-semibold">Divisi</th>
+                                <th class="px-6 py-0 text-right uppercase tracking-wide text-xs text-gray-600 font-semibold">Aksi</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-100 text-gray-800">
                             @forelse($mappings as $mapping)
-                                <tr class="hover:bg-gray-50">
-                                    <td class="px-6 py-3">
-                                        <div class="font-semibold text-gray-900">{{ $mapping->description ?? $mapping->code }}</div>
-                                        <div class="text-xs text-gray-500 mt-1">Dibuat oleh: {{ $mapping->is_legacy_source ? 'Existing' : (optional($mapping->division)->name ?? 'Existing') }}</div>
+                                <tr class="h-16 hover:bg-gray-50 transition-colors duration-150">
+                                    <td class="px-6 py-0 align-middle">
+                                        <div class="font-semibold text-gray-900 text-sm leading-tight">{{ $mapping->description ?? $mapping->code }}</div>
+                                        <div class="text-xs text-gray-500 mt-0.5">Dibuat oleh: {{ $mapping->is_legacy_source ? 'Existing' : (optional($mapping->division)->name ?? 'Existing') }}</div>
                                     </td>
-                                    <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ $mapping->code }}</td>
-                                    <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ $mapping->table_name }}</td>
-                                    <td class="px-4 py-3">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs">
+                                    <td class="px-4 py-0 align-middle font-mono text-xs text-gray-700">{{ $mapping->code }}</td>
+                                    <td class="px-4 py-0 align-middle font-mono text-xs text-gray-700">{{ $mapping->table_name }}</td>
+                                    <td class="px-4 py-0 align-middle">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs whitespace-nowrap">
                                             {{ $mapping->columns->count() }} kolom
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 text-xs">
+                                    <td class="px-4 py-0 align-middle">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 text-xs whitespace-nowrap">
                                             {{ number_format($mapping->row_count) }} baris
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200 text-xs">
+                                    <td class="px-4 py-0 align-middle">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200 text-xs whitespace-nowrap">
                                             Baris {{ $mapping->header_row }}
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full {{ $mapping->is_legacy_source ? 'bg-yellow-50 text-yellow-800 border border-yellow-100' : 'bg-sky-50 text-sky-800 border border-sky-100' }} text-xs">
+                                    <td class="px-4 py-0 align-middle">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full {{ $mapping->is_legacy_source ? 'bg-yellow-50 text-yellow-800 border border-yellow-100' : 'bg-sky-50 text-sky-800 border border-sky-100' }} text-xs whitespace-nowrap">
                                             {{ $mapping->is_legacy_source ? 'Existing' : (optional($mapping->division)->name ?? '-') }}
                                         </span>
                                     </td>
-                                    <td class="px-6 py-3">
-                                        <div class="flex items-center justify-end gap-2 flex-wrap">
+                                    <td class="px-6 py-0 align-middle">
+                                        <div class="flex items-center justify-end gap-2">
                                             @can('update format')
                                                 <a href="{{ route('mapping.edit', $mapping->id) }}"
-                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-800 hover:bg-gray-50">
+                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-800 hover:bg-gray-50 transition-colors duration-150 whitespace-nowrap">
                                                     Edit
                                                 </a>
                                             @endcan
                                             @can('view data')
                                                 <a href="{{ route('mapping.view.data', $mapping->id) }}"
-                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#0057b7] text-white text-xs font-semibold hover:bg-[#004a99]">
+                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg bg-[#0057b7] text-white text-xs font-semibold hover:bg-[#004a99] transition-colors duration-150 whitespace-nowrap">
                                                     Lihat
                                                 </a>
                                             @endcan
                                             @can('download template')
                                                 <a href="{{ route('export.template', $mapping->id) }}"
-                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-800 hover:bg-gray-50">
+                                                   class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-800 hover:bg-gray-50 transition-colors duration-150 whitespace-nowrap">
                                                     Template
                                                 </a>
                                             @endcan

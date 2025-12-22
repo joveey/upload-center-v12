@@ -17,10 +17,24 @@ class UploadPipelineService
     public function run(UploadRun $run, UploadIndexService $uploadIndexService): void
     {
         // Rebuild pseudo-request payload from stored data and reuse controller pipeline.
+        $controlConnection = config('database.control_connection', env('DB_CONNECTION', config('database.default')));
+        $isLegacy = function ($name) {
+            return $name === 'sqlsrv_legacy' || str_starts_with((string) $name, 'legacy_');
+        };
+        if (! $controlConnection || $isLegacy($controlConnection)) {
+            if (config('database.connections.sqlsrv')) {
+                $controlConnection = 'sqlsrv';
+            } else {
+                $fallback = config('database.default');
+                $controlConnection = $isLegacy($fallback) && config('database.connections.sqlsrv') ? 'sqlsrv' : $fallback;
+            }
+        }
+        DB::setDefaultConnection($controlConnection);
+
         $mappingId = $run->mapping_index_id;
         $uploadMode = $run->upload_mode;
         $sheetName = $run->sheet_name;
-        $periodDate = $run->period_date ?? null;
+        $periodDate = $run->upload_mode === 'strict' ? ($run->period_date ?? null) : null;
         $selectedColumns = $run->selected_columns;
 
         // Ensure auth context for logging and permissions

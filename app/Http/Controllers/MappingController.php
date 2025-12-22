@@ -66,7 +66,7 @@ class MappingController extends Controller
             'mappings.*.excel_column' => 'required|string|distinct|max:10',
             'mappings.*.database_column' => ['required', 'string', 'distinct', 'regex:/^[a-z0-9_]+$/', Rule::notIn(['id','period_date'])],
             'mappings.*.is_unique_key' => 'nullable|in:0,1,true,false',
-            'upload_mode' => ['nullable', 'in:upsert,strict'],
+            'upload_mode' => ['nullable', 'in:upsert,strict,replace_all'],
         ], [
             'name.unique' => 'Nama format ini sudah digunakan.',
             'table_name.regex' => 'Nama tabel hanya boleh berisi huruf kecil, angka, dan underscore (_).',
@@ -177,7 +177,16 @@ class MappingController extends Controller
                 Log::warning('Gagal mencatat log pembuatan format: ' . $logException->getMessage());
             }
 
-            return redirect()->route('dashboard')->with('success', "Format '{$validated['name']}' berhasil disimpan dan tabel '{$tableName}' telah dibuat dengan dukungan period_date!");
+            $successMessage = "Format '{$validated['name']}' berhasil didaftarkan! Tabel '{$tableName}' telah dibuat dengan " . count($validated['mappings']) . " kolom mapping dan dukungan period_date untuk versioning.";
+            
+            return redirect()->route('dashboard')
+                ->with('success', $successMessage)
+                ->with('success_details', [
+                    'format_name' => $validated['name'],
+                    'table_name' => $tableName,
+                    'columns_count' => count($validated['mappings']),
+                    'upload_mode' => $validated['upload_mode'] ?? 'not_set',
+                ]);
         } catch (\Exception $e) {
             DB::rollBack();
             Schema::dropIfExists($tableName);
@@ -242,18 +251,26 @@ class MappingController extends Controller
             if (Schema::connection($connection)->hasTable($targetTable)) {
                 $query = DB::connection($connection)->table($targetTable);
                 $uploadIndexFilter = $activeRun?->upload_index;
-                if ($uploadIndexFilter === null && Schema::connection($connection)->hasColumn($tableName, 'upload_index')) {
+                $baseVersionColumn = $this->resolveVersionIndexColumn($tableName, $connection);
+                $legacyIndexMeta = $this->detectLegacyIndexTable($tableName, $connection);
+                $canUseLegacyIndex = $baseVersionColumn
+                    && $legacyIndexMeta
+                    && strcasecmp($baseVersionColumn, $legacyIndexMeta['index_column']) === 0;
+                if ($uploadIndexFilter === null && $canUseLegacyIndex) {
                     $uploadIndexFilter = $this->getActiveUploadIndexFromLegacy($tableName, $connection);
                 }
 
-                if (Schema::connection($connection)->hasColumn($targetTable, 'upload_index') && $uploadIndexFilter !== null) {
+                $targetVersionColumn = $targetTable === $tableName
+                    ? ($baseVersionColumn ?? 'upload_index')
+                    : 'upload_index';
+                if (Schema::connection($connection)->hasColumn($targetTable, $targetVersionColumn) && $uploadIndexFilter !== null) {
                     if ($targetTable === $tableName) {
-                        $query->where(function ($q2) use ($uploadIndexFilter) {
-                            $q2->where('upload_index', $uploadIndexFilter)
-                                ->orWhereNull('upload_index');
+                        $query->where(function ($q2) use ($uploadIndexFilter, $targetVersionColumn) {
+                            $q2->where($targetVersionColumn, $uploadIndexFilter)
+                                ->orWhereNull($targetVersionColumn);
                         });
                     } else {
-                        $query->where('upload_index', $uploadIndexFilter);
+                        $query->where($targetVersionColumn, $uploadIndexFilter);
                     }
                 }
                 $mapping->row_count = $query->count();
@@ -300,6 +317,12 @@ class MappingController extends Controller
     {
         $mapping->load('columns');
 
+        $existingUpdates = collect($request->input('existing_columns', []))
+            ->mapWithKeys(function ($row, $id) {
+                $isUnique = isset($row['is_unique_key']) && (in_array($row['is_unique_key'], ['1', 1, true, 'true', 'on'], true));
+                return [(int) $id => $isUnique];
+            });
+
         $normalizedColumns = collect($request->input('columns', []))
             ->map(function ($col) {
                 return [
@@ -317,6 +340,8 @@ class MappingController extends Controller
             'columns' => ['nullable', 'array'],
             'columns.*.database_column' => ['required_with:columns', 'string', 'regex:/^[a-z0-9_]+$/'],
             'columns.*.is_unique_key' => ['nullable', 'in:0,1,true,false'],
+            'existing_columns' => ['nullable', 'array'],
+            'existing_columns.*.is_unique_key' => ['nullable', 'in:0,1,true,false,on'],
         ], [
             'columns.*.database_column.regex' => 'Nama kolom hanya boleh berisi huruf kecil, angka, dan underscore (_).',
         ]);
@@ -332,7 +357,7 @@ class MappingController extends Controller
             return back()->withInput()->with('error', 'Kolom baru bertabrakan dengan kolom yang sudah ada.');
         }
 
-        $reserved = ['id', 'period_date', 'upload_index', 'created_at', 'updated_at', 'is_active', 'division_id'];
+        $reserved = ['id', 'period_date', 'upload_index', 'index_id', 'created_at', 'updated_at', 'status_batch', 'is_active', 'division_id'];
         if ($newDb->intersect($reserved)->isNotEmpty()) {
             return back()->withInput()->with('error', 'Nama kolom yang dipilih termasuk kolom terlarang.');
         }
@@ -352,6 +377,14 @@ class MappingController extends Controller
             if ((int) $mapping->header_row !== (int) $validated['header_row']) {
                 $mapping->header_row = (int) $validated['header_row'];
                 $mapping->save();
+            }
+
+            // Update unique flag for existing columns (mapping metadata only)
+            foreach ($mapping->columns as $col) {
+                if ($existingUpdates->has($col->id)) {
+                    $col->is_unique_key = $existingUpdates->get($col->id) ? 1 : 0;
+                    $col->save();
+                }
             }
 
             // Tambah kolom baru (DB + mapping)
@@ -413,21 +446,53 @@ class MappingController extends Controller
             $connection = 'sqlsrv_legacy';
         }
 
+        // Detect if table has period column
+        $actualTableColumns = Schema::connection($connection)->hasTable($baseTableName) 
+            ? Schema::connection($connection)->getColumnListing($baseTableName)
+            : [];
+        $hasPeriodColumn = false;
+        foreach (['period', 'period_date', 'periode', 'period_dt', 'perioddate', 'periodo', 'per_date', 'period_code', 'priod'] as $candidate) {
+            if (in_array($candidate, $actualTableColumns)) {
+                $hasPeriodColumn = true;
+                break;
+            }
+        }
+
+        $legacyIndexMeta = $this->detectLegacyIndexTable($baseTableName, $connection);
+        $baseTableExists = Schema::connection($connection)->hasTable($baseTableName);
+        $versionColumn = $baseTableExists ? $this->resolveVersionIndexColumn($baseTableName, $connection) : null;
+        $baseHasVersionIndex = $baseTableExists && $versionColumn !== null;
+        $baseVersionColumn = $versionColumn ?? 'upload_index';
+        $useLegacyActivePointer = $legacyIndexMeta !== null
+            && $baseHasVersionIndex
+            && strcasecmp($versionColumn, $legacyIndexMeta['index_column']) === 0;
+        $legacyActiveIndexQuery = $useLegacyActivePointer
+            ? $this->buildLegacyActiveIndexQuery($legacyIndexMeta, $connection, $periodFilter)
+            : null;
+
         /** @var UploadIndexService $uploadIndexService */
         $uploadIndexService = app(UploadIndexService::class);
         $activeRun = null;
         $activeRuns = collect();
         $tableName = $baseTableName;
         $legacyActiveIndex = null;
-        if ($periodFilter) {
-            $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
-            if (! $activeRun) {
-                $legacyActiveIndex = $this->getActiveUploadIndexFromLegacy($baseTableName, $connection, $periodFilter);
-            }
-        } else {
-            $activeRuns = $uploadIndexService->getActiveRuns($mapping->id);
-            if ($activeRuns->isEmpty()) {
-                $legacyActiveIndex = $this->getActiveUploadIndexFromLegacy($baseTableName, $connection);
+        if (! $useLegacyActivePointer) {
+            if ($periodFilter) {
+                $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
+                if (! $activeRun) {
+                    $fallbackRun = $uploadIndexService->getActiveRun($mapping->id, null);
+                    if ($fallbackRun && $fallbackRun->period_date === null) {
+                        $activeRun = $fallbackRun;
+                    }
+                }
+                if (! $activeRun) {
+                    $legacyActiveIndex = $this->getActiveUploadIndexFromLegacy($baseTableName, $connection, $periodFilter);
+                }
+            } else {
+                $activeRuns = $uploadIndexService->getActiveRuns($mapping->id);
+                if ($activeRuns->isEmpty()) {
+                    $legacyActiveIndex = $this->getActiveUploadIndexFromLegacy($baseTableName, $connection);
+                }
             }
         }
 
@@ -436,6 +501,9 @@ class MappingController extends Controller
             ->sortBy(fn($col) => $this->columnLetterToIndex($col->excel_column_index))
             ->pluck('table_column_name', 'excel_column_index')
             ->toArray();
+        if (!empty($baseVersionColumn)) {
+            $columnMapping = array_filter($columnMapping, fn($col) => $col !== $baseVersionColumn);
+        }
 
         if (empty($columnMapping)) {
             return back()->with('error', 'Tidak ada kolom yang di-mapping untuk format ini.');
@@ -470,7 +538,9 @@ class MappingController extends Controller
             string $tableName,
             ?int $uploadIndex = null,
             bool $includeNullUploadIndex = false,
-            bool $onlyNullUploadIndex = false
+            bool $onlyNullUploadIndex = false,
+            $uploadIndexSubquery = null,
+            string $versionColumn = 'upload_index'
         ) use ($connection, $user, $periodFilter, $getTableColumns, $buildSelectColumns, $baseTableName) {
             if (!Schema::connection($connection)->hasTable($tableName)) {
                 return null;
@@ -481,7 +551,7 @@ class MappingController extends Controller
 
             if ($periodFilter) {
                 $periodColumn = null;
-                foreach (['period_date', 'period', 'periode', 'period_dt', 'perioddate'] as $candidate) {
+                foreach (['period_date', 'period', 'periode', 'period_dt', 'perioddate', 'periodo', 'per_date', 'period_code'] as $candidate) {
                     if (in_array($candidate, $actualColumns, true)) {
                         $periodColumn = $candidate;
                         break;
@@ -492,17 +562,19 @@ class MappingController extends Controller
                 }
             }
 
-            if (in_array('upload_index', $actualColumns, true)) {
-                if ($onlyNullUploadIndex) {
-                    $query->whereNull('upload_index');
+            if (in_array($versionColumn, $actualColumns, true)) {
+                if ($uploadIndexSubquery !== null) {
+                    $query->whereIn($versionColumn, $uploadIndexSubquery);
+                } elseif ($onlyNullUploadIndex) {
+                    $query->whereNull($versionColumn);
                 } elseif ($uploadIndex !== null) {
                     if ($includeNullUploadIndex && $tableName === $baseTableName) {
-                        $query->where(function ($q2) use ($uploadIndex) {
-                            $q2->where('upload_index', $uploadIndex)
-                                ->orWhereNull('upload_index');
+                        $query->where(function ($q2) use ($uploadIndex, $versionColumn) {
+                            $q2->where($versionColumn, $uploadIndex)
+                                ->orWhereNull($versionColumn);
                         });
                     } else {
-                        $query->where('upload_index', $uploadIndex);
+                        $query->where($versionColumn, $uploadIndex);
                     }
                 }
             }
@@ -516,59 +588,68 @@ class MappingController extends Controller
 
         $queries = [];
         $usedBaseTable = false;
-        $baseTableExists = Schema::connection($connection)->hasTable($baseTableName);
-        $baseTableColumns = $baseTableExists ? $getTableColumns($baseTableName) : [];
-        $baseHasUploadIndex = $baseTableExists && in_array('upload_index', $baseTableColumns, true);
 
-        if ($periodFilter) {
-            if ($activeRun && $activeRun->period_date) {
+        if ($useLegacyActivePointer) {
+            if ($baseTableExists) {
+                $queries[] = $buildQuery($baseTableName, null, false, false, $legacyActiveIndexQuery, $baseVersionColumn);
+                $usedBaseTable = true;
+            }
+        } elseif ($periodFilter) {
+            if ($activeRun && !$activeRun->period_date) {
+                $queries[] = $buildQuery($baseTableName, (int) $activeRun->upload_index, false, false, null, $baseVersionColumn);
+                $usedBaseTable = true;
+            } elseif ($activeRun && $activeRun->period_date) {
                 $candidate = $this->buildStrictVersionTableName($baseTableName, $activeRun->period_date, (int) $activeRun->upload_index);
                 if (Schema::connection($connection)->hasTable($candidate)) {
-                    $queries[] = $buildQuery($candidate, (int) $activeRun->upload_index);
+                    $queries[] = $buildQuery($candidate, (int) $activeRun->upload_index, false, false, null, 'upload_index');
                 } else {
                     $uploadIndexFilter = $activeRun->upload_index ?? $legacyActiveIndex;
-                    $queries[] = $buildQuery($baseTableName, $uploadIndexFilter, true);
+                    $queries[] = $buildQuery($baseTableName, $uploadIndexFilter, true, false, null, $baseVersionColumn);
                     $usedBaseTable = true;
                 }
             } elseif ($legacyActiveIndex !== null) {
-                $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true);
+                $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true, false, null, $baseVersionColumn);
                 $usedBaseTable = true;
             } else {
-                $queries[] = $buildQuery($baseTableName, null, true);
+                $queries[] = $buildQuery($baseTableName, null, true, false, null, $baseVersionColumn);
                 $usedBaseTable = true;
             }
         } else {
             $needsUnversionedBase = false;
             if ($activeRuns->isEmpty()) {
                 if ($baseTableExists) {
-                    $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true);
+                    $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true, false, null, $baseVersionColumn);
                     $usedBaseTable = true;
                 }
             } else {
                 foreach ($activeRuns as $run) {
                     if (!$run->period_date) {
+                        if ($baseTableExists) {
+                            $queries[] = $buildQuery($baseTableName, (int) $run->upload_index, false, false, null, $baseVersionColumn);
+                            $usedBaseTable = true;
+                        }
                         continue;
                     }
                     $candidate = $this->buildStrictVersionTableName($baseTableName, $run->period_date, (int) $run->upload_index);
                     if (Schema::connection($connection)->hasTable($candidate)) {
-                        $queries[] = $buildQuery($candidate, (int) $run->upload_index);
+                        $queries[] = $buildQuery($candidate, (int) $run->upload_index, false, false, null, 'upload_index');
                     } elseif ($baseTableExists) {
-                        if ($baseHasUploadIndex) {
-                            $queries[] = $buildQuery($baseTableName, (int) $run->upload_index);
+                        if ($baseHasVersionIndex) {
+                            $queries[] = $buildQuery($baseTableName, (int) $run->upload_index, false, false, null, $baseVersionColumn);
                             $usedBaseTable = true;
                             $needsUnversionedBase = true;
                         } elseif (!$usedBaseTable) {
-                            $queries[] = $buildQuery($baseTableName, null);
+                            $queries[] = $buildQuery($baseTableName, null, false, false, null, $baseVersionColumn);
                             $usedBaseTable = true;
                         }
                     }
                 }
                 if (empty($queries) && $baseTableExists) {
-                    $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true);
+                    $queries[] = $buildQuery($baseTableName, $legacyActiveIndex, true, false, null, $baseVersionColumn);
                     $usedBaseTable = true;
                 }
                 if ($baseTableExists && ($needsUnversionedBase || !$usedBaseTable)) {
-                    $queries[] = $buildQuery($baseTableName, null, false, $baseHasUploadIndex);
+                    $queries[] = $buildQuery($baseTableName, null, false, $baseHasVersionIndex, null, $baseVersionColumn);
                     $usedBaseTable = true;
                 }
             }
@@ -604,6 +685,7 @@ class MappingController extends Controller
             'data' => $data,
             'columnMapping' => $columnMapping,
             'period_date' => $activeRun->period_date ?? $periodFilter,
+            'hasPeriodColumn' => $hasPeriodColumn,
         ]);
     }
 
@@ -632,6 +714,12 @@ class MappingController extends Controller
         /** @var UploadIndexService $uploadIndexService */
         $uploadIndexService = app(UploadIndexService::class);
         $activeRun = $uploadIndexService->getActiveRun($mapping->id, $periodFilter);
+        if (! $activeRun && $periodFilter) {
+            $fallbackRun = $uploadIndexService->getActiveRun($mapping->id, null);
+            if ($fallbackRun && $fallbackRun->period_date === null) {
+                $activeRun = $fallbackRun;
+            }
+        }
 
         $tableName = $baseTableName;
         if ($activeRun && $activeRun->period_date) {
@@ -662,9 +750,13 @@ class MappingController extends Controller
 
         $connectionInstance = DB::connection($connection);
         $driver = $connectionInstance->getDriverName();
-        $tableHasUploadIndex = Schema::connection($connection)->hasColumn($tableName, 'upload_index');
+        $versionColumn = $this->resolveVersionIndexColumn($tableName, $connection);
+        $legacyIndexMeta = $this->detectLegacyIndexTable($baseTableName, $connection);
+        $canUseLegacyIndex = $versionColumn
+            && $legacyIndexMeta
+            && strcasecmp($versionColumn, $legacyIndexMeta['index_column']) === 0;
         $legacyActiveIndex = null;
-        if ($tableHasUploadIndex && ! $activeRun) {
+        if ($canUseLegacyIndex && ! $activeRun) {
             $legacyActiveIndex = $this->getActiveUploadIndexFromLegacy($baseTableName, $connection, $periodFilter);
         }
 
@@ -685,7 +777,7 @@ class MappingController extends Controller
             return response()->json(['success' => false, 'message' => 'Tidak ada kolom teks yang bisa dibersihkan.'], 422);
         }
 
-        $connectionInstance->transaction(function () use ($connectionInstance, $driver, $tableName, $stringColumns, $tableHasUploadIndex, $activeRun, $mapping, $periodFilter, $legacyActiveIndex) {
+        $connectionInstance->transaction(function () use ($connectionInstance, $driver, $tableName, $stringColumns, $versionColumn, $activeRun, $mapping, $legacyActiveIndex) {
             foreach ($stringColumns as $col) {
                 $wrappedCol = $connectionInstance->getQueryGrammar()->wrap($col);
 
@@ -701,10 +793,10 @@ class MappingController extends Controller
                 }
 
                 $query = $connectionInstance->table($tableName)->whereNotNull($col);
-                if ($tableHasUploadIndex) {
+                if ($versionColumn) {
                     $uploadIndexFilter = $activeRun->upload_index ?? $legacyActiveIndex;
                     if ($uploadIndexFilter !== null) {
-                        $query->where('upload_index', $uploadIndexFilter);
+                        $query->where($versionColumn, $uploadIndexFilter);
                     }
                 }
                 $query->update([$col => $trimExpr]);
@@ -801,7 +893,20 @@ class MappingController extends Controller
                 'sheet_name' => ['nullable', 'string'],
             ]);
 
-            $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
+            $controlConnection = config('database.control_connection', env('DB_CONNECTION', config('database.default')));
+            $isLegacy = function (?string $name) {
+                return $name === 'sqlsrv_legacy' || ($name && str_starts_with($name, 'legacy_'));
+            };
+            if (! $controlConnection || $isLegacy($controlConnection)) {
+                if (config('database.connections.sqlsrv')) {
+                    $controlConnection = 'sqlsrv';
+                } else {
+                    $fallback = config('database.default');
+                    $controlConnection = $isLegacy($fallback) && config('database.connections.sqlsrv') ? 'sqlsrv' : $fallback;
+                }
+            }
+
+            $mapping = MappingIndex::on($controlConnection)->with('columns')->find($validated['mapping_id']);
             
             if (!$mapping) {
                 return response()->json([
@@ -871,6 +976,16 @@ class MappingController extends Controller
     private function generatePreviewHtml($mapping, $headers, $previewRows, $mappingRules): string
     {
         $html = '<div class="space-y-6">';
+
+        // Upload mode auto-recommendation based on mapping config
+        $hasUniqueKey = $mappingRules->contains(function ($rule) {
+            return in_array($rule->is_unique_key, [true, 1, '1', 'true'], true);
+        });
+        $periodCandidates = ['period', 'period_date', 'periode', 'period_dt', 'perioddate', 'periodo', 'per_date', 'period_code','priod'];
+        $hasPeriodColumn = $mappingRules->contains(function ($rule) use ($periodCandidates) {
+            return in_array(strtolower($rule->table_column_name), $periodCandidates, true);
+        });
+        $recommendedMode = $hasUniqueKey ? 'upsert' : ($hasPeriodColumn ? 'strict' : 'replace_all');
         
         // Info section
         $html .= '<div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">';
@@ -894,12 +1009,16 @@ class MappingController extends Controller
         $html .= '<div class="p-4">';
         if ($mapping->upload_mode) {
             $lockedMode = $mapping->upload_mode;
-            $lockedLabel = $lockedMode === 'strict'
-                ? 'Strict (Replace by Period)'
-                : 'Upsert (Update atau Insert)';
-            $lockedDesc = $lockedMode === 'strict'
-                ? 'Sistem akan mengganti data per periode berdasarkan tanggal hasil mapping.'
-                : 'Update data yang sudah ada berdasarkan kunci unik, atau insert data baru jika belum ada.';
+            if ($lockedMode === 'strict') {
+                $lockedLabel = 'Strict (Replace by Period)';
+                $lockedDesc = 'Sistem akan mengganti data per periode berdasarkan tanggal hasil mapping.';
+            } elseif ($lockedMode === 'replace_all') {
+                $lockedLabel = 'Replace All (Ganti Semua)';
+                $lockedDesc = 'Semua data lama akan diganti sepenuhnya oleh upload terbaru tanpa downtime.';
+            } else {
+                $lockedLabel = 'Upsert (Update atau Insert)';
+                $lockedDesc = 'Update data yang sudah ada berdasarkan kunci unik, atau insert data baru jika belum ada.';
+            }
 
             $html .= '<div class="flex items-start p-3 bg-white rounded-lg border-2 border-dashed border-amber-300">';
             $html .= '<div class="ml-3">';
@@ -910,6 +1029,8 @@ class MappingController extends Controller
             $html .= '<p class="text-sm text-gray-600 mt-1">' . $lockedDesc . '</p>';
             if ($lockedMode === 'strict') {
                 $html .= '<p class="text-xs text-red-600 mt-1 font-medium">Perhatian: pastikan kolom tanggal di Excel sudah dimapping ke \\\'period_date\\\'!</p>';
+            } elseif ($lockedMode === 'replace_all') {
+                $html .= '<p class="text-xs text-amber-700 mt-1 font-medium">Perhatian: seluruh data lama akan diganti. Pastikan file berisi snapshot lengkap.</p>';
             }
             $html .= '</div>';
             $html .= '</div>';
@@ -919,11 +1040,13 @@ class MappingController extends Controller
             
             // Upsert mode
             $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-green-200 cursor-pointer hover:border-green-400 transition-all duration-200">';
-            $html .= '<input type="radio" name="upload_mode" value="upsert" checked class="mt-1 rounded-full border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50">';
+            $html .= '<input type="radio" name="upload_mode" value="upsert" ' . ($recommendedMode === 'upsert' ? 'checked' : '') . ' class="mt-1 rounded-full border-gray-300 text-green-600 shadow-sm focus:border-green-300 focus:ring focus:ring-green-200 focus:ring-opacity-50">';
             $html .= '<div class="ml-3">';
             $html .= '<div class="flex items-center">';
             $html .= '<span class="font-semibold text-gray-900">Upsert (Update atau Insert)</span>';
-            $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Rekomendasi</span>';
+            if ($recommendedMode === 'upsert') {
+                $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Rekomendasi</span>';
+            }
             $html .= '</div>';
             $html .= '<p class="text-sm text-gray-600 mt-1">Update data yang sudah ada berdasarkan kunci unik, atau insert data baru jika belum ada</p>';
             $html .= '</div>';
@@ -931,14 +1054,27 @@ class MappingController extends Controller
             
             // Strict mode
             $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-red-200 cursor-pointer hover:border-red-400 transition-all duration-200">';
-            $html .= '<input type="radio" name="upload_mode" value="strict" class="mt-1 rounded-full border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50">';
+            $html .= '<input type="radio" name="upload_mode" value="strict" ' . ($recommendedMode === 'strict' ? 'checked' : '') . ' class="mt-1 rounded-full border-gray-300 text-red-600 shadow-sm focus:border-red-300 focus:ring focus:ring-red-200 focus:ring-opacity-50">';
             $html .= '<div class="ml-3">';
             $html .= '<div class="flex items-center">';
             $html .= '<span class="font-semibold text-gray-900">Strict (Replace by Period)</span>';
-            $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Hati-hati</span>';
+            $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">' . ($recommendedMode === 'strict' ? 'Rekomendasi' : 'Hati-hati') . '</span>';
             $html .= '</div>';
             $html .= '<p class="text-sm text-gray-600 mt-1">Sistem akan <strong>otomatis mendeteksi tanggal</strong> dari file Excel (berdasarkan mapping), menghapus data lama pada bulan tersebut, lalu memasukkan data baru.</p>';
             $html .= '<p class="text-xs text-red-600 mt-1 font-medium">Perhatian: pastikan kolom tanggal di Excel sudah dimapping ke "period" </p>';
+            $html .= '</div>';
+            $html .= '</label>';
+
+            // Replace All mode
+            $html .= '<label class="flex items-start p-3 bg-white rounded-lg border-2 border-indigo-200 cursor-pointer hover:border-indigo-400 transition-all duration-200">';
+            $html .= '<input type="radio" name="upload_mode" value="replace_all" ' . ($recommendedMode === 'replace_all' ? 'checked' : '') . ' class="mt-1 rounded-full border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">';
+            $html .= '<div class="ml-3">';
+            $html .= '<div class="flex items-center">';
+            $html .= '<span class="font-semibold text-gray-900">Replace All (Ganti Semua)</span>';
+            $html .= '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">' . ($recommendedMode === 'replace_all' ? 'Rekomendasi' : 'Snapshot') . '</span>';
+            $html .= '</div>';
+            $html .= '<p class="text-sm text-gray-600 mt-1">Seluruh data lama diganti oleh upload terbaru menggunakan <strong>index_id</strong> tanpa downtime.</p>';
+            $html .= '<p class="text-xs text-amber-700 mt-1 font-medium">Pastikan file berisi snapshot lengkap agar tidak ada data tertinggal.</p>';
             $html .= '</div>';
             $html .= '</label>';
             
@@ -961,10 +1097,14 @@ class MappingController extends Controller
         // Get available database columns for mapping
         $dbColumns = $mappingRules->pluck('table_column_name', 'excel_column_index')->toArray();
         $allDbColumns = $mappingRules->pluck('table_column_name')->toArray();
+        $uniqueColumns = $mappingRules->filter(function ($rule) {
+            return in_array($rule->is_unique_key, [true, 1, '1', 'true'], true);
+        })->pluck('table_column_name', 'excel_column_index')->toArray();
         
         foreach ($headers as $index => $header) {
             $excelCol = $this->indexToColumn($index);
             $mappedDbCol = $dbColumns[$excelCol] ?? '';
+            $isUnique = isset($uniqueColumns[$excelCol]);
             
             $html .= '<div class="p-4 hover:bg-gray-50 transition">';
             $html .= '<div class="flex items-start space-x-4">';
@@ -992,6 +1132,12 @@ class MappingController extends Controller
             }
             $html .= '</select>';
             $html .= '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">DB: ' . ($mappedDbCol ?: 'N/A') . '</span>';
+            $html .= '</div>';
+
+            // Unique key toggle
+            $html .= '<div class="mt-2 inline-flex items-center space-x-2 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 w-fit">';
+            $html .= '<input type="checkbox" class="unique-checkbox rounded border-amber-300 text-amber-600 shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200 focus:ring-opacity-50" data-excel-col="' . $excelCol . '" ' . ($isUnique ? 'checked' : '') . '>';
+            $html .= '<span class="text-xs font-semibold text-amber-800">Jadikan Kunci Unik</span>';
             $html .= '</div>';
             
             // Sample data
@@ -1800,17 +1946,114 @@ class MappingController extends Controller
     }
 
     /**
-     * Ensure upload_index column exists on the target table for versioned datasets (strict mode).
+     * Ensure version index column exists on the target table (upload_index or index_id).
      */
-    private function ensureUploadIndexColumn(string $tableName, string $connection): void
+    private function ensureUploadIndexColumn(string $tableName, string $connection, string $columnName = 'upload_index'): void
     {
         $schema = Schema::connection($connection);
-        if (! $schema->hasColumn($tableName, 'upload_index')) {
-            $schema->table($tableName, function (Blueprint $table) {
-                $table->integer('upload_index')->nullable()->index();
+        if (! $schema->hasColumn($tableName, $columnName)) {
+            $schema->table($tableName, function (Blueprint $table) use ($columnName) {
+                $table->integer($columnName)->nullable()->index();
             });
-            Log::info("Added upload_index column on {$tableName} (connection: {$connection}) for dataset versioning");
+            Log::info("Added {$columnName} column on {$tableName} (connection: {$connection}) for dataset versioning");
         }
+    }
+
+    /**
+     * Create legacy *_INDEX table if missing, return its meta.
+     */
+    private function ensureLegacyIndexTable(string $baseTable, string $connection): ?array
+    {
+        $meta = $this->detectLegacyIndexTable($baseTable, $connection);
+        if ($meta) {
+            return $meta;
+        }
+
+        $indexTable = $baseTable . '_INDEX';
+        try {
+            Schema::connection($connection)->create($indexTable, function (Blueprint $table) {
+                // Use proper auto-increment bigInteger primary key
+                $table->bigIncrements('index_id');
+                $table->date('period_date')->nullable()->index();
+                $table->string('status_batch', 20)->default('inactive')->index();
+                $table->timestamps();
+            });
+            Log::info("Legacy index table created", [
+                'table' => $indexTable,
+                'connection' => $connection,
+            ]);
+            
+            // After creation, detect and return metadata
+            return $this->detectLegacyIndexTable($baseTable, $connection);
+        } catch (\Throwable $e) {
+            Log::warning('Gagal membuat legacy index table', [
+                'table' => $indexTable,
+                'connection' => $connection,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Drop data rows for inactive index_ids after a successful Replace All switch.
+     */
+    private function cleanupInactiveIndexData(string $baseTable, string $connection, string $versionColumn, array $meta, int $activeIndex): void
+    {
+        try {
+            if (!Schema::connection($connection)->hasTable($baseTable) || !Schema::connection($connection)->hasColumn($baseTable, $versionColumn)) {
+                return;
+            }
+
+            $inactiveIds = DB::connection($connection)
+                ->table($meta['table'])
+                ->where($meta['status_column'], 'INACTIVE')
+                ->where($meta['index_column'], '<>', $activeIndex)
+                ->pluck($meta['index_column'])
+                ->filter(fn($v) => is_numeric($v))
+                ->map(fn($v) => (int) $v)
+                ->values();
+
+            if ($inactiveIds->isEmpty()) {
+                return;
+            }
+
+            $deleted = DB::connection($connection)
+                ->table($baseTable)
+                ->whereIn($versionColumn, $inactiveIds)
+                ->delete();
+
+            Log::info('Cleanup inactive index data completed', [
+                'table' => $baseTable,
+                'connection' => $connection,
+                'version_column' => $versionColumn,
+                'inactive_ids' => $inactiveIds->all(),
+                'rows_deleted' => $deleted,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Cleanup inactive index data skipped', [
+                'table' => $baseTable,
+                'connection' => $connection,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Resolve which version index column exists on a table (index_id or upload_index).
+     */
+    private function resolveVersionIndexColumn(string $tableName, string $connection): ?string
+    {
+        $schema = Schema::connection($connection);
+        if ($schema->hasColumn($tableName, 'index_id')) {
+            return 'index_id';
+        }
+        if ($schema->hasColumn($tableName, 'upload_index')) {
+            return 'upload_index';
+        }
+
+        return null;
     }
 
     private function isLegacyConnectionName(?string $connection): bool
@@ -1858,12 +2101,20 @@ class MappingController extends Controller
 
         $columns = Schema::connection($connection)->getColumnListing($indexTable);
         $indexColumn = collect($columns)->first(function ($col) {
-            return in_array(strtolower($col), ['upload_index', 'index', 'idx'], true);
+            return in_array(strtolower($col), ['index_id', 'upload_index', 'index', 'idx'], true);
         });
-        $activeColumn = collect($columns)->first(function ($col) {
-            return in_array(strtolower($col), ['is_active', 'active', 'status'], true);
+        $statusColumn = collect($columns)->first(function ($col) {
+            return strtolower($col) === 'status_batch';
         });
-        if (!$indexColumn || !$activeColumn) {
+        $statusMode = $statusColumn ? 'batch' : null;
+
+        if (! $statusColumn) {
+            $statusColumn = collect($columns)->first(function ($col) {
+                return in_array(strtolower($col), ['is_active', 'active', 'status'], true);
+            });
+            $statusMode = $statusColumn ? 'boolean' : null;
+        }
+        if (!$indexColumn || !$statusColumn) {
             return null;
         }
 
@@ -1874,7 +2125,8 @@ class MappingController extends Controller
         return [
             'table' => $indexTable,
             'index_column' => $indexColumn,
-            'active_column' => $activeColumn,
+            'status_column' => $statusColumn,
+            'status_mode' => $statusMode,
             'period_column' => $periodColumn,
             'has_created_at' => in_array('created_at', $columns, true),
             'has_updated_at' => in_array('updated_at', $columns, true),
@@ -1882,7 +2134,35 @@ class MappingController extends Controller
     }
 
     /**
-     * Get the currently active upload_index from legacy *_INDEX table when present.
+     * Build a subquery for active index_id from legacy *_INDEX (optionally filtered by period).
+     */
+    private function buildLegacyActiveIndexQuery(array $meta, string $connection, ?string $periodDate = null)
+    {
+        $conn = DB::connection($connection);
+        $grammar = $conn->getQueryGrammar();
+
+        $query = $conn->table($meta['table'])
+            ->select($meta['index_column'])
+            ->where(function ($q) use ($meta, $grammar) {
+                $wrapped = $grammar->wrap($meta['status_column']);
+                if (($meta['status_mode'] ?? 'batch') === 'batch') {
+                    $q->whereRaw("UPPER({$wrapped}) = 'ACTIVE'");
+                } else {
+                    $q->where($meta['status_column'], 1)
+                        ->orWhere($meta['status_column'], true)
+                        ->orWhereRaw("LOWER({$wrapped}) = 'active'");
+                }
+            });
+
+        if ($periodDate && $meta['period_column']) {
+            $query->whereDate($meta['period_column'], $periodDate);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Get the currently active index_id from legacy *_INDEX table when present.
      */
     private function getActiveUploadIndexFromLegacy(string $baseTable, string $connection, ?string $periodDate = null): ?int
     {
@@ -1900,10 +2180,14 @@ class MappingController extends Controller
                     $q->whereDate($meta['period_column'], $periodDate);
                 })
                 ->where(function ($q) use ($meta, $grammar) {
-                    $wrapped = $grammar->wrap($meta['active_column']);
-                    $q->where($meta['active_column'], 1)
-                        ->orWhere($meta['active_column'], true)
-                        ->orWhereRaw("LOWER({$wrapped}) = 'active'");
+                    $wrapped = $grammar->wrap($meta['status_column']);
+                    if (($meta['status_mode'] ?? 'batch') === 'batch') {
+                        $q->whereRaw("UPPER({$wrapped}) = 'ACTIVE'");
+                    } else {
+                        $q->where($meta['status_column'], 1)
+                            ->orWhere($meta['status_column'], true)
+                            ->orWhereRaw("LOWER({$wrapped}) = 'active'");
+                    }
                 })
                 ->orderByDesc($meta['index_column'])
                 ->first();
@@ -1922,21 +2206,24 @@ class MappingController extends Controller
     }
 
     /**
-     * Ambil nilai maksimum upload_index dari tabel utama dan/atau tabel legacy *_INDEX.
+     * Ambil nilai maksimum index dari tabel utama dan/atau tabel legacy *_INDEX.
      */
     private function getExistingUploadIndexCeiling(string $baseTable, string $connection, ?string $periodDate = null): ?int
     {
         $max = null;
 
-        if (Schema::connection($connection)->hasTable($baseTable) && Schema::connection($connection)->hasColumn($baseTable, 'upload_index')) {
-            $columns = Schema::connection($connection)->getColumnListing($baseTable);
-            $query = DB::connection($connection)->table($baseTable);
-            if ($periodDate && in_array('period_date', $columns, true)) {
-                $query->whereDate('period_date', $periodDate);
-            }
-            $val = $query->max('upload_index');
-            if (is_numeric($val)) {
-                $max = (int) $val;
+        if (Schema::connection($connection)->hasTable($baseTable)) {
+            $indexColumn = $this->resolveVersionIndexColumn($baseTable, $connection);
+            if ($indexColumn) {
+                $columns = Schema::connection($connection)->getColumnListing($baseTable);
+                $query = DB::connection($connection)->table($baseTable);
+                if ($periodDate && in_array('period_date', $columns, true)) {
+                    $query->whereDate('period_date', $periodDate);
+                }
+                $val = $query->max($indexColumn);
+                if (is_numeric($val)) {
+                    $max = (int) $val;
+                }
             }
         }
 
@@ -1956,7 +2243,128 @@ class MappingController extends Controller
     }
 
     /**
-     * Sync legacy *_INDEX table to mark the provided upload_index as active.
+     * Create a legacy *_INDEX row in PROCESSING state and return the new index_id.
+     * Smart allocation: continues from existing max index.
+     */
+    private function createLegacyIndexBatch(string $baseTable, string $connection, ?string $periodDate = null, bool $createIfMissing = false): ?int
+    {
+        $meta = $this->detectLegacyIndexTable($baseTable, $connection);
+        if (! $meta && $createIfMissing) {
+            $meta = $this->ensureLegacyIndexTable($baseTable, $connection);
+        }
+        if (!$meta) {
+            Log::warning('No legacy index table metadata found', [
+                'base_table' => $baseTable,
+                'connection' => $connection,
+            ]);
+            return null;
+        }
+
+        try {
+            $conn = DB::connection($connection);
+            
+            // Get max ceiling from existing data
+            $maxCeiling = $this->getExistingUploadIndexCeiling($baseTable, $connection, $periodDate);
+            
+            // Also check control connection's mapping_upload_runs for same mapping
+            $controlConnection = config('database.control_connection', config('database.default'));
+            $controlConn = DB::connection($controlConnection);
+            $mappingId = $controlConn->table('mapping_indices')
+                ->where('table_name', $baseTable)
+                ->first()?->id;
+            
+            if ($mappingId) {
+                $controlMax = $controlConn->table('mapping_upload_runs')
+                    ->where('mapping_index_id', $mappingId)
+                    ->when(
+                        $periodDate !== null,
+                        fn($q) => $q->where('period_date', $periodDate),
+                        fn($q) => $q->whereNull('period_date')
+                    )
+                    ->max('upload_index');
+                
+                $maxCeiling = max($maxCeiling ?? 0, (int) ($controlMax ?? 0));
+            }
+            
+            $now = now();
+            $statusMode = $meta['status_mode'] ?? 'batch';
+            $payload = [
+                $meta['status_column'] => $statusMode === 'batch' ? 'processing' : 0,
+            ];
+            if ($meta['period_column']) {
+                $payload[$meta['period_column']] = $periodDate;
+            }
+            if ($meta['has_updated_at']) {
+                $payload['updated_at'] = $now;
+            }
+            if ($meta['has_created_at']) {
+                $payload['created_at'] = $now;
+            }
+
+            // Explicitly set next index to continue from ceiling
+            $nextIndex = null;
+            if ($maxCeiling && $maxCeiling > 0) {
+                $nextIndex = $maxCeiling + 1;
+                $payload[$meta['index_column']] = $nextIndex;
+            }
+            
+            Log::info('Inserting into legacy index table', [
+                'table' => $meta['table'],
+                'index_column' => $meta['index_column'],
+                'payload' => $payload,
+                'max_ceiling' => $maxCeiling,
+                'next_index' => $nextIndex,
+            ]);
+            
+            // When explicitly setting the index column value, we need to insert then query back the ID
+            if ($nextIndex !== null) {
+                // Insert with explicit value
+                $conn->table($meta['table'])->insert($payload);
+                // Query back to get the inserted row's ID
+                $query = $conn->table($meta['table'])
+                    ->where($meta['index_column'], $nextIndex);
+                if ($meta['period_column'] && $periodDate) {
+                    $query->where($meta['period_column'], $periodDate);
+                }
+                $newId = $query->value('index_id') ?? $nextIndex;
+            } else {
+                // Let the database auto-generate the index_id
+                $newId = $conn->table($meta['table'])->insertGetId($payload);
+            }
+            
+            Log::info('Legacy index batch created (smart allocation)', [
+                'base_table' => $baseTable,
+                'new_index_id' => $newId,
+                'max_ceiling' => $maxCeiling,
+                'period_date' => $periodDate,
+                'is_numeric' => is_numeric($newId),
+                'type' => gettype($newId),
+            ]);
+            
+            if (!is_numeric($newId) || $newId === '' || $newId === null) {
+                Log::error('insertGetId/insert returned invalid value', [
+                    'newId' => var_export($newId, true),
+                    'table' => $meta['table'],
+                    'payload' => $payload,
+                ]);
+                return null;
+            }
+            
+            return (int) $newId;
+        } catch (\Throwable $e) {
+            Log::warning('Gagal membuat legacy index batch', [
+                'base_table' => $baseTable,
+                'index_table' => $meta['table'] ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Sync legacy *_INDEX table to mark the provided index as active.
      */
     private function syncLegacyIndexTable(string $baseTable, string $connection, int $uploadIndex, ?string $periodDate = null): void
     {
@@ -1968,19 +2376,26 @@ class MappingController extends Controller
         try {
             $conn = DB::connection($connection);
             $now = now();
-            $table = $conn->table($meta['table']);
+
+            $statusMode = $meta['status_mode'] ?? 'batch';
+            $inactiveValue = $statusMode === 'batch' ? 'inactive' : 0;
+            $activeValue = $statusMode === 'batch' ? 'active' : 1;
 
             // Deactivate previous entries
-            $inactivePayload = [$meta['active_column'] => 0];
+            $inactivePayload = [$meta['status_column'] => $inactiveValue];
             if ($meta['has_updated_at']) {
                 $inactivePayload['updated_at'] = $now;
             }
-            $table->update($inactivePayload);
+            $deactivateQuery = $conn->table($meta['table']);
+            if ($meta['period_column'] && $periodDate) {
+                $deactivateQuery->whereDate($meta['period_column'], $periodDate);
+            }
+            $deactivateQuery->update($inactivePayload);
 
             // Upsert the new active index
             $activePayload = [
                 $meta['index_column'] => $uploadIndex,
-                $meta['active_column'] => 1,
+                $meta['status_column'] => $activeValue,
             ];
             if ($meta['period_column'] && $periodDate) {
                 $activePayload[$meta['period_column']] = $periodDate;
@@ -1992,7 +2407,8 @@ class MappingController extends Controller
                 $activePayload['created_at'] = $now;
             }
 
-            $existing = $table->where($meta['index_column'], $uploadIndex);
+            $existing = $conn->table($meta['table'])
+                ->where($meta['index_column'], $uploadIndex);
             if ($meta['period_column'] && $periodDate) {
                 $existing->whereDate($meta['period_column'], $periodDate);
             }
@@ -2159,7 +2575,7 @@ class MappingController extends Controller
             'data_file' => ['required', File::types(['xlsx', 'xls'])],
             'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
             'selected_columns' => ['nullable', 'string'],
-            'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
+            'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict', 'replace_all'])],
             'sheet_name' => ['nullable', 'string'],
             'period_date' => ['nullable', 'required_if:upload_mode,strict', 'date_format:Y-m-d'],
         ], [
@@ -2216,6 +2632,20 @@ class MappingController extends Controller
         $rowsSinceLog = 0;
         $convertedCsvPath = null;
         $storedXlsxPath = null;
+        $controlConnection = config('database.control_connection', config('database.default'));
+        $isLegacyControl = function (?string $name) {
+            return $name === 'sqlsrv_legacy' || ($name && str_starts_with($name, 'legacy_'));
+        };
+        if (! $controlConnection || $isLegacyControl($controlConnection)) {
+            if (config('database.connections.sqlsrv')) {
+                $controlConnection = 'sqlsrv';
+            } else {
+                $fallback = config('database.default');
+                $controlConnection = $isLegacyControl($fallback) && config('database.connections.sqlsrv') ? 'sqlsrv' : $fallback;
+            }
+        }
+        $originalDefaultConnection = DB::getDefaultConnection();
+        DB::setDefaultConnection($controlConnection);
         /** @var UploadIndexService $uploadIndexService */
         $uploadIndexService = app(UploadIndexService::class);
         $uploadRun = null;
@@ -2239,22 +2669,41 @@ class MappingController extends Controller
                 'data_file' => ['required', File::types(['xlsx', 'xls'])],
                 'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
                 'selected_columns' => ['nullable', 'string'],
-                'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict'])],
+                'upload_mode' => ['required', 'string', Rule::in(['upsert', 'strict', 'replace_all'])],
                 'sheet_name' => ['nullable', 'string'],
                 'period_date' => ['nullable', 'required_if:upload_mode,strict', 'date_format:Y-m-d'],
             ], [
                 'period_date.date_format' => 'Period harus menggunakan format YYYY-MM-DD.',
             ]);
             
-            // Use provided period_date (strict) or today's date
+            $uploadMode = $validated['upload_mode'];
+            // Use provided period_date (strict) or today's date for table columns
             $periodDate = $validated['period_date'] ?? now()->toDateString();
+            $runPeriodDate = $uploadMode === 'strict' ? $periodDate : null;
             // Use ISO 8601 (T separator) for datetime to keep SQL Server bulk insert happy
             $nowString = now()->format('Y-m-d\\TH:i:s.v');
             // Remove delimiter/newlines that could break bulk parsing
             $nowStringSanitized = str_replace(['|', "\r", "\n"], ' ', $nowString);
-            Log::info("Menggunakan period_date: {$periodDate}");
+            Log::info('Menggunakan period_date', [
+                'period_date' => $periodDate,
+                'upload_mode' => $uploadMode,
+                'run_period_date' => $runPeriodDate,
+            ]);
 
-            $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
+            $controlConnection = config('database.control_connection', env('DB_CONNECTION', config('database.default')));
+            $isLegacyControl = function (?string $name) {
+                return $name === 'sqlsrv_legacy' || ($name && str_starts_with($name, 'legacy_'));
+            };
+            if (! $controlConnection || $isLegacyControl($controlConnection)) {
+                if (config('database.connections.sqlsrv')) {
+                    $controlConnection = 'sqlsrv';
+                } else {
+                    $fallback = config('database.default');
+                    $controlConnection = $isLegacyControl($fallback) && config('database.connections.sqlsrv') ? 'sqlsrv' : $fallback;
+                }
+            }
+
+            $mapping = MappingIndex::on($controlConnection)->with('columns')->find($validated['mapping_id']);
             
             if (!$mapping) {
                 return response()->json([
@@ -2270,7 +2719,6 @@ class MappingController extends Controller
             $mainTableName = $mapping->table_name;
             $headerRow = $mapping->header_row;
             $headerRowIndex = max(0, $headerRow - 1);
-            $uploadMode = $validated['upload_mode'];
 
             // Tentukan koneksi target; fallback ke legacy jika tabel ada di legacy saja
             $connection = $mapping->target_connection
@@ -2306,20 +2754,38 @@ class MappingController extends Controller
 
             // Parse selected columns
             $selectedColumns = null;
+            $selectedUniqueKeys = null;
             if (!empty($validated['selected_columns'])) {
                 $selectedColumns = json_decode($validated['selected_columns'], true);
                 Log::info('Selected columns:', $selectedColumns);
+            }
+            if (!empty($request->input('selected_unique_keys'))) {
+                $selectedUniqueKeys = json_decode($request->input('selected_unique_keys'), true);
+                if (! is_array($selectedUniqueKeys)) {
+                    $selectedUniqueKeys = null;
+                }
+                Log::info('Selected unique keys:', $selectedUniqueKeys ?? []);
             }
 
             // Get mapping rules and filter by selected columns
             $mappingRules = $mapping->columns;
             
             if ($selectedColumns !== null && is_array($selectedColumns)) {
-                $mappingRules = $mappingRules->filter(function ($rule) use ($selectedColumns) {
-                    return isset($selectedColumns[$rule->excel_column_index]) 
-                        && !empty($selectedColumns[$rule->excel_column_index]);
+                $selectedValues = array_filter($selectedColumns);
+                $mappingRules = $mappingRules->filter(function ($rule) use ($selectedColumns, $selectedValues) {
+                    $excelKeyMatch = isset($selectedColumns[$rule->excel_column_index]) && !empty($selectedColumns[$rule->excel_column_index]);
+                    $valueMatch = in_array($rule->table_column_name, $selectedValues, true);
+                    return $excelKeyMatch || $valueMatch;
                 });
                 Log::info('Filtered mapping rules count: ' . $mappingRules->count());
+            }
+            if ($selectedUniqueKeys !== null && is_array($selectedUniqueKeys)) {
+                $mappingRules = $mappingRules->map(function ($rule) use ($selectedUniqueKeys) {
+                    if (isset($selectedUniqueKeys[$rule->excel_column_index])) {
+                        $rule->is_unique_key = true;
+                    }
+                    return $rule;
+                });
             }
 
             if ($mappingRules->isEmpty()) {
@@ -2347,30 +2813,82 @@ class MappingController extends Controller
                 ]);
                 $uploadMode = 'append';
             }
-            $useUploadIndex = ($uploadMode === 'strict');
+            $useUploadIndex = in_array($uploadMode, ['strict', 'replace_all'], true);
+            $isReplaceAll = $uploadMode === 'replace_all';
             $legacyIndexMeta = $useUploadIndex ? $this->detectLegacyIndexTable($mainTableName, $connection) : null;
-            $useInlineIndexTable = $useUploadIndex && ($legacyIndexMeta !== null || $this->isLegacyConnectionName($connection));
-            $existingIndexCeiling = $useUploadIndex
-                ? $this->getExistingUploadIndexCeiling($mainTableName, $connection, $periodDate)
-                : null;
+            $useInlineIndexTable = $useUploadIndex
+                && ($isReplaceAll || $legacyIndexMeta !== null || $this->isLegacyConnectionName($connection));
+            $versionColumn = $useUploadIndex ? 'upload_index' : null;
+            if ($useUploadIndex && $useInlineIndexTable) {
+                $versionColumn = $legacyIndexMeta['index_column']
+                    ?? $this->resolveVersionIndexColumn($mainTableName, $connection)
+                    ?? ($this->isLegacyConnectionName($connection) ? 'index_id' : 'upload_index');
+            }
 
             if ($useUploadIndex) {
-                if (empty($validated['period_date'])) {
+                if ($uploadMode === 'strict' && empty($validated['period_date'])) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Period date wajib diisi untuk mode strict.'
                     ], 422);
                 }
 
-                $this->ensureUploadIndexColumn($mainTableName, $connection);
-                $uploadRun = $uploadIndexService->beginRun($mapping->id, Auth::id(), $periodDate, $existingIndexCeiling);
-                $uploadIndexValue = (int) $uploadRun->upload_index;
+                $this->ensureUploadIndexColumn($mainTableName, $connection, $versionColumn ?? 'upload_index');
+
+                // Ensure legacy index table if needed, then re-detect metadata
+                if ($isReplaceAll && $useInlineIndexTable && ! $legacyIndexMeta) {
+                    $legacyIndexMeta = $this->ensureLegacyIndexTable($mainTableName, $connection);
+                }
+
+                // NOW re-evaluate $useLegacyIndexId AFTER ensuring the table exists
+                $useLegacyIndexId = $useUploadIndex
+                    && $isReplaceAll
+                    && $useInlineIndexTable
+                    && $legacyIndexMeta !== null
+                    && ($legacyIndexMeta['status_mode'] ?? 'batch') === 'batch';
+                
+                // For replace_all mode with legacy index, clear old index entries (fresh start)
+                if ($useLegacyIndexId && $legacyIndexMeta) {
+                    try {
+                        $conn = DB::connection($connection);
+                        $conn->table($legacyIndexMeta['table'])->truncate();
+                        Log::info('Legacy index table truncated for fresh replace_all', [
+                            'table' => $legacyIndexMeta['table'],
+                            'connection' => $connection,
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to truncate legacy index table', [
+                            'table' => $legacyIndexMeta['table'],
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+                
+                $existingIndexCeiling = $useUploadIndex && ! $useLegacyIndexId
+                    ? $this->getExistingUploadIndexCeiling($mainTableName, $connection, $runPeriodDate)
+                    : null;
+
+                if ($useLegacyIndexId) {
+                    $legacyIndexId = $this->createLegacyIndexBatch($mainTableName, $connection, null, true);
+                    if (! $legacyIndexId) {
+                        throw new \RuntimeException('Gagal membuat index batch legacy.');
+                    }
+                    $uploadRun = $uploadIndexService->beginRunWithIndex($mapping->id, $legacyIndexId, Auth::id(), $runPeriodDate);
+                    $uploadIndexValue = (int) $legacyIndexId;
+                } else {
+                    $uploadRun = $uploadIndexService->beginRun($mapping->id, Auth::id(), $runPeriodDate, $existingIndexCeiling);
+                    $uploadIndexValue = (int) $uploadRun->upload_index;
+                }
 
                 if ($legacyIndexMeta) {
-                    Log::info('Legacy index table detected for strict mode', [
+                    Log::info('Legacy index table detected for versioning', [
+                        'upload_mode' => $uploadMode,
                         'index_table' => $legacyIndexMeta['table'],
+                        'index_column' => $legacyIndexMeta['index_column'],
+                        'status_column' => $legacyIndexMeta['status_column'],
+                        'status_mode' => $legacyIndexMeta['status_mode'],
                         'ceiling' => $existingIndexCeiling,
-                        'next_upload_index' => $uploadIndexValue,
+                        'next_index_id' => $uploadIndexValue,
                     ]);
                 }
             }
@@ -2387,12 +2905,14 @@ class MappingController extends Controller
                 $this->reseedStrictVersionIdentity($mainTableName, $versionTableName, $connection);
                 $targetTableName = $versionTableName;
             } elseif ($useUploadIndex && $useInlineIndexTable) {
-                Log::info('Using inline upload_index versioning on base table', [
+                Log::info('Using inline versioning on base table', [
                     'table' => $mainTableName,
-                    'upload_index' => $uploadIndexValue,
+                    'index_column' => $versionColumn ?? 'upload_index',
+                    'index_value' => $uploadIndexValue,
+                    'upload_mode' => $uploadMode,
                 ]);
             }
-            if ($useUploadIndex && ! $useInlineIndexTable) {
+            if ($uploadMode === 'strict' && $useUploadIndex && ! $useInlineIndexTable) {
                 $hasPeriodDate = true;
             }
 
@@ -2427,10 +2947,11 @@ class MappingController extends Controller
             // Use a pipe delimiter for SQL Server bulk insert to avoid commas inside data shifting columns
             $bulkDelimiter = '|';
             $orderedColumns = array_values($columnMapping);
+            $versionColumnInMapping = $useUploadIndex && $versionColumn && in_array($versionColumn, $orderedColumns, true);
             $stagingColumns = array_merge(
                 $orderedColumns,
                 $hasPeriodDate ? ['period_date'] : [],
-                $useUploadIndex ? ['upload_index'] : [],
+                ($useUploadIndex && $versionColumn && ! $versionColumnInMapping) ? [$versionColumn] : [],
                 ['created_at', 'updated_at']
             );
             $columnIndexes = [];
@@ -2452,7 +2973,7 @@ class MappingController extends Controller
             $this->updateUploadRunProgress($uploadRun?->id, 10);
             
             // Create staging table with identical structure (no unique constraint to allow dedup after bulk insert)
-            Schema::connection($connection)->create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns, $driver, $uploadMode, $hasPeriodDate, $useUploadIndex) {
+            Schema::connection($connection)->create($stagingTableName, function (Blueprint $table) use ($columnMapping, $uniqueKeyColumns, $driver, $uploadMode, $hasPeriodDate, $useUploadIndex, $versionColumn, $versionColumnInMapping) {
                 // Add all mapped columns as text/nullable (same as main table)
                 foreach ($columnMapping as $dbColumn) {
                     if (in_array($dbColumn, $uniqueKeyColumns, true)) {
@@ -2465,8 +2986,8 @@ class MappingController extends Controller
                 if ($hasPeriodDate) {
                     $table->date('period_date')->nullable();
                 }
-                if ($useUploadIndex) {
-                    $table->integer('upload_index')->nullable()->index();
+                if ($useUploadIndex && $versionColumn && ! $versionColumnInMapping) {
+                    $table->integer($versionColumn)->nullable()->index();
                 }
                 // Keep timestamps as strings to avoid bulk insert conversion issues
                 $table->string('created_at', 30)->nullable();
@@ -2567,6 +3088,9 @@ class MappingController extends Controller
                     }
 
                     $cellValue = $row[$colIndex] ?? null;
+                    if ($useUploadIndex && $versionColumn && $dbColumn === $versionColumn) {
+                        $cellValue = $uploadIndexValue;
+                    }
 
                     if (is_string($cellValue)) {
                         $cellValue = trim($cellValue);
@@ -2602,7 +3126,7 @@ class MappingController extends Controller
                 if ($hasPeriodDate) {
                     $rowValues[] = $periodDate;
                 }
-                if ($useUploadIndex) {
+                if ($useUploadIndex && ! $versionColumnInMapping) {
                     $rowValues[] = $uploadIndexValue;
                 }
                 $rowValues[] = $nowStringSanitized;
@@ -2738,16 +3262,29 @@ class MappingController extends Controller
             DB::beginTransaction();
             
             try {
+                $targetColumns = $schema->getColumnListing($targetTableName);
+                $targetColumnMap = array_fill_keys(array_map('strtolower', $targetColumns), true);
+                $allowTimestamps = ! $this->isLegacyConnectionName($connection);
+                $hasCreatedAt = $allowTimestamps && isset($targetColumnMap['created_at']);
+                $hasUpdatedAt = $allowTimestamps && isset($targetColumnMap['updated_at']);
                 if ($uploadMode === 'append') {
                     // APPEND MODE: Insert all staging rows as-is (with safe conversions)
                     Log::info("APPEND MODE: Inserting data without deletion for table '{$targetTableName}'");
 
-                    $columns = array_merge(
-                        array_values($columnMapping),
-                        $hasPeriodDate ? ['period_date'] : [],
-                        $useUploadIndex ? ['upload_index'] : [],
-                        ['created_at', 'updated_at']
-                    );
+                    $columns = array_values($columnMapping);
+                    if ($hasPeriodDate) {
+                        $columns[] = 'period_date';
+                    }
+                    if ($useUploadIndex && $versionColumn && !in_array($versionColumn, $columns, true)) {
+                        $columns[] = $versionColumn;
+                    }
+                    if ($hasCreatedAt) {
+                        $columns[] = 'created_at';
+                    }
+                    if ($hasUpdatedAt) {
+                        $columns[] = 'updated_at';
+                    }
+                    $columns = array_values(array_filter($columns, fn($col) => isset($targetColumnMap[strtolower($col)])));
 
                     $columnTypes = [];
                     foreach ($columns as $col) {
@@ -2781,23 +3318,34 @@ class MappingController extends Controller
 
                     $message = $totalRows . " baris data berhasil ditambahkan ke tabel '{$targetTableName}' (Mode Append).";
 
-                } elseif ($uploadMode === 'strict') {
+                } elseif (in_array($uploadMode, ['strict', 'replace_all'], true)) {
                     if ($useUploadIndex && $uploadIndexValue === null) {
-                        throw new \RuntimeException('upload_index run belum diinisialisasi.');
+                        throw new \RuntimeException('index run belum diinisialisasi.');
                     }
-                    // STRICT MODE (versioned): keep previous versions, insert new dataset with upload_index
-                    Log::info("STRICT MODE (versioned): inserting dataset upload_index {$uploadIndexValue} for table '{$targetTableName}'");
+                    $modeLabel = $uploadMode === 'replace_all' ? 'REPLACE ALL' : 'STRICT';
+                    // Version index mode: keep previous versions, insert new dataset with version index
+                    $versionLabel = $versionColumn ?? 'upload_index';
+                    Log::info("{$modeLabel} MODE: inserting dataset {$versionLabel} {$uploadIndexValue} for table '{$targetTableName}'");
 
                     $columns = array_merge(
                         array_values($columnMapping),
                         $hasPeriodDate ? ['period_date'] : [],
-                        ['upload_index'],
-                        ['created_at', 'updated_at']
+                        $useUploadIndex && $versionColumn && !in_array($versionColumn, array_values($columnMapping), true) ? [$versionColumn] : []
                     );
+                    if ($hasCreatedAt) {
+                        $columns[] = 'created_at';
+                    }
+                    if ($hasUpdatedAt) {
+                        $columns[] = 'updated_at';
+                    }
+                    if ($useUploadIndex && $versionColumn && in_array($versionColumn, array_values($columnMapping), true)) {
+                        $columns = array_values(array_unique($columns));
+                    }
+                    $columns = array_values(array_filter($columns, fn($col) => isset($targetColumnMap[strtolower($col)])));
 
-                    // Ensure we don't duplicate the same upload_index if a retry happens
+                    // Ensure we don't duplicate the same index value if a retry happens
                     DB::table($targetTableName)
-                        ->where('upload_index', $uploadIndexValue)
+                        ->where($versionColumn ?? 'upload_index', $uploadIndexValue)
                         ->delete();
 
                     // Build safe select with TRY_CONVERT for numeric/date columns to avoid type errors on legacy DB
@@ -2830,20 +3378,30 @@ class MappingController extends Controller
                         $columns,
                         DB::table($stagingTableName)->select($selects)
                     );
-                    
-                    Log::info("STRICT MODE: Successfully inserted versioned dataset (upload_index {$uploadIndexValue})");
-                    $message = $totalRows . " baris data berhasil diimpor (Strict, upload_index {$uploadIndexValue}).";
-                    
+
+                    if ($uploadMode === 'replace_all') {
+                        Log::info("REPLACE ALL: Successfully inserted dataset ({$versionLabel} {$uploadIndexValue})");
+                        $message = $totalRows . " baris data berhasil diimpor (Replace All, {$versionLabel} {$uploadIndexValue}).";
+                    } else {
+                        Log::info("STRICT MODE: Successfully inserted versioned dataset ({$versionLabel} {$uploadIndexValue})");
+                        $message = $totalRows . " baris data berhasil diimpor (Strict, {$versionLabel} {$uploadIndexValue}).";
+                    }
+
                     $this->updateUploadRunProgress($uploadRun?->id, 85);
-                    
+
                 } else {
                     // UPSERT MODE
-                    $dataColumns = array_values($columnMapping);
-                    $allColumns = array_merge(
-                        $dataColumns,
-                        $hasPeriodDate ? ['period_date'] : [],
-                        ['created_at', 'updated_at']
-                    );
+                    $dataColumns = array_values(array_filter($columnMapping, fn($col) => isset($targetColumnMap[strtolower($col)])));
+                    $allColumns = $dataColumns;
+                    if ($hasPeriodDate && isset($targetColumnMap['period_date'])) {
+                        $allColumns[] = 'period_date';
+                    }
+                    if ($hasCreatedAt) {
+                        $allColumns[] = 'created_at';
+                    }
+                    if ($hasUpdatedAt) {
+                        $allColumns[] = 'updated_at';
+                    }
                     
                     if ($driver === 'sqlsrv') {
                         // SQL Server uses MERGE for upsert
@@ -2851,7 +3409,9 @@ class MappingController extends Controller
                         
                         $onClause = implode(' AND ', array_map(fn($col) => "target.[{$col}] = source.[{$col}]", $uniqueKeyColumns));
                         $updateSetParts = array_map(fn($col) => "target.[{$col}] = source.[{$col}]", $dataColumns);
-                        $updateSetParts[] = "target.[updated_at] = source.[updated_at]";
+                        if (in_array('updated_at', $allColumns, true)) {
+                            $updateSetParts[] = "target.[updated_at] = source.[updated_at]";
+                        }
                         $updateSet = implode(', ', $updateSetParts);
                         
                         $insertColumns = implode(', ', array_map(fn($col) => "[{$col}]", $allColumns));
@@ -2877,7 +3437,9 @@ class MappingController extends Controller
                         foreach ($dataColumns as $col) {
                             $updateClauses[] = "\"{$col}\" = EXCLUDED.\"{$col}\"";
                         }
-                        $updateClauses[] = "\"updated_at\" = EXCLUDED.\"updated_at\"";
+                        if ($hasUpdatedAt) {
+                            $updateClauses[] = "\"updated_at\" = EXCLUDED.\"updated_at\"";
+                        }
                         $updateSet = implode(', ', $updateClauses);
                         
                         $columnsList = implode(', ', array_map(fn($col) => '"' . $col . '"', $allColumns));
@@ -2896,15 +3458,29 @@ class MappingController extends Controller
                 // Commit transaction
                 DB::commit();
                 Log::info("=== TRANSAKSI BERHASIL DI-COMMIT ===");
+
+                // Switch back to system/control connection before touching system tables
+                DB::setDefaultConnection($controlConnection);
                 
                 if ($uploadRun && $useUploadIndex) {
-                    $uploadIndexService->activateRun($uploadRun);
+                    $activationScope = $isReplaceAll ? 'all' : 'period';
+                    $uploadIndexService->activateRun($uploadRun, $activationScope);
 
-                    if ($legacyIndexMeta) {
-                        $this->syncLegacyIndexTable($mainTableName, $connection, $uploadIndexValue, $periodDate);
+                    if ($isReplaceAll) {
+                        $uploadIndexService->switchActiveIndex($mapping->id, $uploadIndexValue);
+                        if ($legacyIndexMeta && $versionColumn) {
+                            $this->cleanupInactiveIndexData($mainTableName, $connection, $versionColumn, $legacyIndexMeta, $uploadIndexValue);
+                        }
+                    } elseif ($legacyIndexMeta) {
+                        $this->syncLegacyIndexTable(
+                            $mainTableName,
+                            $connection,
+                            $uploadIndexValue,
+                            $periodDate
+                        );
                     }
 
-                    if (! $useInlineIndexTable) {
+                    if ($uploadMode === 'strict' && ! $useInlineIndexTable) {
                         CleanupStrictVersions::dispatch($mapping->id, $periodDate, $mainTableName, $connection)
                             ->delay(now()->addDay());
                     }
@@ -2923,6 +3499,8 @@ class MappingController extends Controller
                     'staging_table' => $stagingTableName,
                     'main_table' => $mainTableName,
                 ]);
+                // Ensure default connection is restored before rethrow
+                DB::setDefaultConnection($controlConnection);
                 throw $e; // Re-throw to outer catch block
             }
             
@@ -3000,6 +3578,8 @@ class MappingController extends Controller
                 'success' => false,
                 'message' => 'Gagal upload data: ' . $e->getMessage()
             ]);
+        } finally {
+            DB::setDefaultConnection($originalDefaultConnection);
         }
     }
 
@@ -3012,7 +3592,13 @@ class MappingController extends Controller
             'mapping_id' => ['required', 'integer', Rule::exists('mapping_indices', 'id')],
         ]);
 
-        $mapping = MappingIndex::find($validated['mapping_id']);
+        $controlConnection = config('database.control_connection', config('database.default'));
+        $isLegacy = fn($name) => $name === 'sqlsrv_legacy' || ($name && str_starts_with($name, 'legacy_'));
+        if (! $controlConnection || $isLegacy($controlConnection)) {
+            $controlConnection = config('database.connections.sqlsrv') ? 'sqlsrv' : config('database.default');
+        }
+
+        $mapping = MappingIndex::on($controlConnection)->find($validated['mapping_id']);
         if (!$mapping) {
             return response()->json([
                 'success' => false,
