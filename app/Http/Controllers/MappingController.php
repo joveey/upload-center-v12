@@ -2006,10 +2006,21 @@ class MappingController extends Controller
                 return;
             }
 
-            $inactiveIds = DB::connection($connection)
-                ->table($meta['table'])
-                ->where($meta['status_column'], 'INACTIVE')
+            $conn = DB::connection($connection);
+            $grammar = $conn->getQueryGrammar();
+            $statusMode = $meta['status_mode'] ?? 'batch';
+
+            $inactiveIds = $conn->table($meta['table'])
                 ->where($meta['index_column'], '<>', $activeIndex)
+                ->where(function ($q) use ($meta, $grammar, $statusMode) {
+                    $wrapped = $grammar->wrap($meta['status_column']);
+                    if ($statusMode === 'batch') {
+                        $q->whereRaw("UPPER({$wrapped}) = 'INACTIVE'");
+                    } else {
+                        $q->where($meta['status_column'], 0)
+                            ->orWhere($meta['status_column'], false);
+                    }
+                })
                 ->pluck($meta['index_column'])
                 ->filter(fn($v) => is_numeric($v))
                 ->map(fn($v) => (int) $v)
@@ -2229,7 +2240,17 @@ class MappingController extends Controller
 
         $legacyMeta = $this->detectLegacyIndexTable($baseTable, $connection);
         if ($legacyMeta) {
-            $query = DB::connection($connection)->table($legacyMeta['table']);
+            $conn = DB::connection($connection);
+
+            // Prefer the latest ACTIVE index_id to continue the sequence cleanly
+            $activeQuery = $this->buildLegacyActiveIndexQuery($legacyMeta, $connection, $periodDate);
+            $activeVal = $activeQuery->max($legacyMeta['index_column']);
+            if (is_numeric($activeVal)) {
+                $max = $max === null ? (int) $activeVal : max($max, (int) $activeVal);
+            }
+
+            // Fallback: absolute max regardless of status
+            $query = $conn->table($legacyMeta['table']);
             if ($periodDate && $legacyMeta['period_column']) {
                 $query->whereDate($legacyMeta['period_column'], $periodDate);
             }
@@ -2265,6 +2286,10 @@ class MappingController extends Controller
             
             // Get max ceiling from existing data
             $maxCeiling = $this->getExistingUploadIndexCeiling($baseTable, $connection, $periodDate);
+            $activeCeiling = $this->getActiveUploadIndexFromLegacy($baseTable, $connection, $periodDate);
+            if (is_numeric($activeCeiling)) {
+                $maxCeiling = max($maxCeiling ?? 0, (int) $activeCeiling);
+            }
             
             // Also check control connection's mapping_upload_runs for same mapping
             $controlConnection = config('database.control_connection', config('database.default'));
@@ -2416,7 +2441,7 @@ class MappingController extends Controller
             if ($existing->exists()) {
                 $existing->update($activePayload);
             } else {
-                $table->insert($activePayload);
+                $conn->table($meta['table'])->insert($activePayload);
             }
         } catch (\Throwable $e) {
             Log::warning('Gagal menyinkronkan legacy index table', [
@@ -2846,18 +2871,20 @@ class MappingController extends Controller
                     && $useInlineIndexTable
                     && $legacyIndexMeta !== null
                     && ($legacyIndexMeta['status_mode'] ?? 'batch') === 'batch';
-                
-                // For replace_all mode with legacy index, clear old index entries (fresh start)
+
+                // For replace_all mode with legacy index, keep existing rows and just append the next index.
+                // We still log the currently active index for visibility/debugging.
                 if ($useLegacyIndexId && $legacyIndexMeta) {
                     try {
-                        $conn = DB::connection($connection);
-                        $conn->table($legacyIndexMeta['table'])->truncate();
-                        Log::info('Legacy index table truncated for fresh replace_all', [
+                        $activeIndex = $this->buildLegacyActiveIndexQuery($legacyIndexMeta, $connection, $runPeriodDate)
+                            ->max($legacyIndexMeta['index_column']);
+                        Log::info('Legacy index table preserved (no truncate). Latest active index detected.', [
                             'table' => $legacyIndexMeta['table'],
                             'connection' => $connection,
+                            'active_index' => $activeIndex,
                         ]);
                     } catch (\Throwable $e) {
-                        Log::warning('Failed to truncate legacy index table', [
+                        Log::warning('Unable to read active legacy index (table preserved)', [
                             'table' => $legacyIndexMeta['table'],
                             'error' => $e->getMessage(),
                         ]);

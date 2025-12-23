@@ -8,6 +8,7 @@ use App\Http\Controllers\UploadRunController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UploadLogController;
 use App\Http\Controllers\UserManagementController;
+use App\Http\Controllers\DatabaseServerController;
 use Illuminate\Support\Facades\Route;
 
 // Public Welcome Page (accessible by everyone)
@@ -24,6 +25,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    // Database server routes - for UI dropdowns
+    Route::get('/api/database-servers', [DatabaseServerController::class, 'servers'])
+        ->name('api.database.servers');
+    Route::get('/api/database-servers/{server}/databases', [DatabaseServerController::class, 'databases'])
+        ->name('api.database.databases');
+    Route::post('/api/database-servers/test-connection', [DatabaseServerController::class, 'testConnection'])
+        ->name('api.database.test');
     
     // Export routes
     Route::middleware('can:export data')->group(function () {
