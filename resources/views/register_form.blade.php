@@ -98,6 +98,21 @@
                                     <x-text-input id="header_row" class="block w-full px-4 py-3 border-gray-300 focus:border-[#0057b7] focus:ring-1 focus:ring-[#0057b7] rounded-lg shadow-sm transition-all duration-200" type="number" name="header_row" :value="old('header_row', 1)" required min="1" />
                                     <p class="mt-1.5 text-xs text-gray-600">Nomor baris tempat header/data dimulai pada file Excel</p>
                                 </div>
+
+                                <div class="rounded-lg border border-[#c7d9f3] bg-white px-4 py-3 text-sm text-gray-700">
+                                    Format baru otomatis dibuat di database bawaan (default connection), jadi tidak perlu memilih server atau database lain.
+                                </div>
+
+                                <div>
+                                    <x-input-label for="upload_mode" :value="__('Default Upload Mode')" class="text-gray-700 font-semibold mb-2" />
+                                    <select name="upload_mode" id="upload_mode" class="block w-full px-4 py-3 border-gray-300 focus:border-[#0057b7] focus:ring-1 focus:ring-[#0057b7] rounded-lg shadow-sm transition-all duration-200 text-sm">
+                                        <option value="" {{ old('upload_mode') === null ? 'selected' : '' }}>Pilih saat upload (default)</option>
+                                        <option value="upsert" {{ old('upload_mode') === 'upsert' ? 'selected' : '' }}>Upsert (gabung kunci unik)</option>
+                                        <option value="strict" {{ old('upload_mode') === 'strict' ? 'selected' : '' }}>Strict (replace per period)</option>
+                                        <option value="replace_all" {{ old('upload_mode') === 'replace_all' ? 'selected' : '' }}>Replace All (ganti semua data)</option>
+                                    </select>
+                                    <p class="mt-1.5 text-xs text-gray-600">Jika dikosongkan, user akan memilih mode (upsert/strict) saat upload.</p>
+                                </div>
                             </div>
                         </div>
                         
@@ -252,7 +267,7 @@
                                                 <p class="text-xs text-gray-500">Header yang terbaca dari file yang diunggah</p>
                                             </div>
                                         </div>
-                                        <button @click="closePreview" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
+                                        <button type="button" @click="closePreview" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                                             </svg>
@@ -286,7 +301,7 @@
                     </div>
                                     </div>
                                     <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
-                                        <button @click="closePreview" class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200 transition">
+                                        <button type="button" @click="closePreview" class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200 transition">
                                             Tutup
                                         </button>
                                     </div>
@@ -358,23 +373,7 @@
                 </div>
             </div>
         </div>
-    </div>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.querySelector('form');
-            
-            form.addEventListener('submit', function(e) {
-                console.log('🚀 Form submitted!');
-                
-                const formData = new FormData(this);
-                console.log('📦 Form data:');
-                for (let [key, value] of formData.entries()) {
-                    console.log(`  ${key}: ${value}`);
-                }
-            });
-        });
-    </script>
+    </div>\n    <script>\n        document.addEventListener('DOMContentLoaded', function() {\n            const form = document.querySelector('form');\n            if (form) {\n                form.addEventListener('submit', function() {\n                    // reserved hook\n                });\n            }\n        });\n    </script>
 </x-app-layout>
 
 <script>
@@ -513,3 +512,4 @@
         };
     }
 </script>
+

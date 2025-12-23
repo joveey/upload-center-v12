@@ -18,31 +18,51 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $guard = config('auth.defaults.guard', 'web');
 
-        $registerFormat = Permission::firstOrCreate([
-            'name' => 'register format',
-            'guard_name' => $guard,
+        // Create permissions
+        $permissions = [
+            'manage users',
+            'create format',
+            'update format',
+            'delete format',
+            'upload data',
+            'download template',
+            'view data',
+            'export data',
+        ];
+
+        foreach ($permissions as $perm) {
+            Permission::firstOrCreate([
+                'name' => $perm,
+                'guard_name' => $guard,
+            ]);
+        }
+
+        // Roles
+        $superuser = Role::firstOrCreate(['name' => 'superuser', 'guard_name' => $guard]);
+        $superuser->syncPermissions(Permission::all());
+
+        $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => $guard]);
+        $admin->syncPermissions([
+            'create format',
+            'update format',
+            'delete format',
+            'upload data',
+            'view data',
+            'download template',
+            'export data',
         ]);
 
-        $uploadData = Permission::firstOrCreate([
-            'name' => 'upload data',
-            'guard_name' => $guard,
+        $user = Role::firstOrCreate(['name' => 'user', 'guard_name' => $guard]);
+        $user->syncPermissions([
+            'upload data',
+            'download template',
+            'view data',
         ]);
 
-        $legacyView = Permission::firstOrCreate([
-            'name' => 'legacy.format.view',
-            'guard_name' => $guard,
+        $viewer = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => $guard]);
+        $viewer->syncPermissions([
+            'view data',
+            'export data',
         ]);
-
-        $divisionUserRole = Role::firstOrCreate([
-            'name' => 'division-user',
-            'guard_name' => $guard,
-        ]);
-        $divisionUserRole->givePermissionTo([$registerFormat, $uploadData]);
-
-        $superAdminRole = Role::firstOrCreate([
-            'name' => 'super-admin',
-            'guard_name' => $guard,
-        ]);
-        $superAdminRole->givePermissionTo(Permission::all());
     }
 }

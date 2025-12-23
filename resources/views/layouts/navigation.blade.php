@@ -31,7 +31,7 @@
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10"></path>
                         </svg>
-                        {{ __('Legacy') }}
+                        {{ __('Existing') }}
                     </a>
 
                     <a href="{{ route('logs.index') }}" class="inline-flex items-center px-1 pt-1 border-b-2 {{ request()->routeIs('logs.*') ? 'border-[#0057b7] text-[#0f172a]' : 'border-transparent text-gray-500 hover:text-[#0f172a] hover:border-[#c7d9f3]' }} text-sm font-medium leading-5 focus:outline-none focus:border-[#004a99] transition duration-150 ease-in-out">
@@ -41,7 +41,7 @@
                         {{ __('Logs') }}
                     </a>
 
-                    @if(auth()->user()?->hasRole('super-admin'))
+                    @if(auth()->user()?->hasRole('superuser'))
                         <a href="{{ route('admin.users.index') }}" class="inline-flex items-center px-1 pt-1 border-b-2 {{ request()->routeIs('admin.users.*') ? 'border-[#0057b7] text-[#0f172a]' : 'border-transparent text-gray-500 hover:text-[#0f172a] hover:border-[#c7d9f3]' }} text-sm font-medium leading-5 focus:outline-none focus:border-[#004a99] transition duration-150 ease-in-out">
                             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2a3 3 0 00-.879-2.121M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2a3 3 0 01.879-2.121M12 12a5 5 0 100-10 5 5 0 000 10zm0 0c1.657 0 3 1.79 3 4v1m-3-5c-1.657 0-3 1.79-3 4v1" />
@@ -50,7 +50,7 @@
                         </a>
                     @endif
 
-                    @can('register format')
+                    @can('create format')
                         <a href="{{ route('mapping.register.form') }}" class="inline-flex items-center px-1 pt-1 border-b-2 {{ request()->routeIs('mapping.*') ? 'border-[#0057b7] text-[#0f172a]' : 'border-transparent text-gray-500 hover:text-[#0f172a] hover:border-[#c7d9f3]' }} text-sm font-medium leading-5 focus:outline-none focus:border-[#004a99] transition duration-150 ease-in-out">
                             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
@@ -157,20 +157,20 @@
             </a>
 
             <a href="{{ route('legacy.format.list') }}" class="block pl-3 pr-4 py-2 border-l-4 {{ request()->routeIs('legacy.format.*') ? 'border-[#0057b7] text-[#004a99] bg-[#e8f1fb]' : 'border-transparent text-gray-600 hover:text-[#0f172a] hover:bg-[#eef4fc] hover:border-[#c7d9f3]' }} text-base font-medium transition duration-150 ease-in-out">
-                {{ __('Legacy') }}
+                {{ __('Existing') }}
             </a>
 
             <a href="{{ route('logs.index') }}" class="block pl-3 pr-4 py-2 border-l-4 {{ request()->routeIs('logs.*') ? 'border-[#0057b7] text-[#004a99] bg-[#e8f1fb]' : 'border-transparent text-gray-600 hover:text-[#0f172a] hover:bg-[#eef4fc] hover:border-[#c7d9f3]' }} text-base font-medium transition duration-150 ease-in-out">
                 {{ __('Logs') }}
             </a>
 
-            @if(auth()->user()?->hasRole('super-admin'))
+            @if(auth()->user()?->hasRole('superuser'))
                 <a href="{{ route('admin.users.index') }}" class="block pl-3 pr-4 py-2 border-l-4 {{ request()->routeIs('admin.users.*') ? 'border-[#0057b7] text-[#004a99] bg-[#e8f1fb]' : 'border-transparent text-gray-600 hover:text-[#0f172a] hover:bg-[#eef4fc] hover:border-[#c7d9f3]' }} text-base font-medium transition duration-150 ease-in-out">
                     {{ __('Users') }}
                 </a>
             @endif
 
-            @can('register format')
+            @can('create format')
                 <a href="{{ route('mapping.register.form') }}" class="block pl-3 pr-4 py-2 border-l-4 {{ request()->routeIs('mapping.*') ? 'border-[#0057b7] text-[#004a99] bg-[#e8f1fb]' : 'border-transparent text-gray-600 hover:text-[#0f172a] hover:bg-[#eef4fc] hover:border-[#c7d9f3]' }} text-base font-medium transition duration-150 ease-in-out">
                     {{ __('Register Format') }}
                 </a>

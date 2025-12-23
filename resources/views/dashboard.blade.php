@@ -21,7 +21,7 @@
             </p>
         </div>  
     </div>
-    @can('register format')
+    @can('create format')
         <a href="{{ route('mapping.register.form') }}">
             <button class="inline-flex items-center px-5 py-2.5 bg-[#0057b7] hover:bg-[#004a99] border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm">
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -38,22 +38,90 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="mb-6 space-y-3">
                 @if (session('success'))
-                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
-                        <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center mr-4">
-                            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                            </svg>
+                    @php
+                        $details = session('success_details');
+                    @endphp
+                    @if($details && isset($details['format_name']))
+                        {{-- Enhanced success notification for format registration --}}
+                        <div class="bg-gradient-to-r from-green-50 via-emerald-50 to-green-50 border-l-4 border-green-500 rounded-xl shadow-lg p-6 flex items-start animate-slide-down" role="alert">
+                            <div class="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center mr-4 shadow-md">
+                                <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <span class="font-bold text-green-900 text-lg block mb-1">🎉 Format Berhasil Didaftarkan!</span>
+                                <p class="text-green-800 text-sm font-medium mb-3">{{ session('success') }}</p>
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-green-200">
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                                        </svg>
+                                        <div class="text-xs">
+                                            <span class="text-green-700 font-semibold">{{ $details['format_name'] }}</span>
+                                            <p class="text-green-600 text-xs">Format Name</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2m-9 4h12M5 9h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V11a2 2 0 012-2z"></path>
+                                        </svg>
+                                        <div class="text-xs">
+                                            <span class="text-green-700 font-semibold">{{ $details['table_name'] }}</span>
+                                            <p class="text-green-600 text-xs">Table</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                        <div class="text-xs">
+                                            <span class="text-green-700 font-semibold">{{ $details['columns_count'] }}</span>
+                                            <p class="text-green-600 text-xs">Columns</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+                                        </svg>
+                                        <div class="text-xs">
+                                            <span class="text-green-700 font-semibold capitalize">{{ $details['upload_mode'] ?? 'Auto' }}</span>
+                                            <p class="text-green-600 text-xs">Upload Mode</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-4 flex items-center space-x-2 text-xs text-green-700">
+                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>Siap untuk menerima upload data Excel!</span>
+                                </div>
+                            </div>
+                            <button onclick="this.parentElement.remove()" class="ml-4 text-green-500 hover:text-green-700 transition-colors flex-shrink-0">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
                         </div>
-                        <div class="flex-1">
-                            <span class="font-bold text-green-800 text-lg">Berhasil!</span>
-                            <p class="text-green-700 text-sm mt-1">{{ session('success') }}</p>
+                    @else
+                        {{-- Fallback for other success messages --}}
+                        <div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
+                            <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center mr-4">
+                                <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <span class="font-bold text-green-800 text-lg">Berhasil!</span>
+                                <p class="text-green-700 text-sm mt-1">{{ session('success') }}</p>
+                            </div>
+                            <button onclick="this.parentElement.remove()" class="ml-4 text-green-500 hover:text-green-700 transition-colors">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                </svg>
+                            </button>
                         </div>
-                        <button onclick="this.parentElement.remove()" class="ml-4 text-green-500 hover:text-green-700 transition-colors">
-                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                            </svg>
-                        </button>
-                    </div>
+                    @endif
                 @endif
                 @if (session('error'))
                     <div class="bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 rounded-xl shadow-md p-5 flex items-start animate-slide-down" role="alert">
@@ -75,6 +143,33 @@
                 @endif
             </div>
 
+            {{-- Quick Search Bar --}}
+            <div class="mb-6">
+                <form method="GET" action="{{ route('formats.index') }}" class="flex gap-3">
+                    <div class="flex-1">
+                        <div class="flex items-center bg-white border border-gray-300 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-200 focus-within:ring-2 focus-within:ring-[#0057b7] focus-within:ring-opacity-50 focus-within:border-[#0057b7]">
+                            <svg class="w-5 h-5 text-gray-400 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            <input 
+                                type="text" 
+                                name="q" 
+                                placeholder="Cari format..." 
+                                class="flex-1 bg-white border-0 focus:ring-0 focus:outline-none py-3 px-4 text-sm placeholder-gray-400"
+                            >
+                        </div>
+                    </div>
+                    <button 
+                        type="submit" 
+                        class="px-5 py-3 bg-[#0057b7] hover:bg-[#004a99] text-white font-medium text-sm rounded-xl transition-colors duration-200 shadow-sm hover:shadow-md flex items-center"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+
             {{-- Admin stats and alerts --}}
             @if(auth()->user()->division->is_super_user)
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
@@ -91,7 +186,7 @@
                                     <p class="text-2xl font-bold text-gray-900">{{ number_format($stats['total_formats'] ?? 0) }}</p>
                                 </div>
                             </div>
-                            <div class="text-xs px-3 py-1 rounded-full bg-[#e8f1fb] text-[#0057b7] border border-[#c7d9f3]">Legacy: {{ number_format($stats['legacy_formats'] ?? 0) }}</div>
+                            <div class="text-xs px-3 py-1 rounded-full bg-[#e8f1fb] text-[#0057b7] border border-[#c7d9f3]">Existing: {{ number_format($stats['legacy_formats'] ?? 0) }}</div>
                         </div>
                         <div class="grid grid-cols-2 gap-3 mt-4 text-sm">
                             <div class="p-3 bg-gray-50 rounded-xl border border-gray-200">
@@ -209,6 +304,7 @@
             <div class="p-6">
                 <form id="uploadForm" method="POST" enctype="multipart/form-data" class="space-y-5">
                     @csrf
+                    <input type="hidden" name="period_date" id="period_date_input">
                     <div class="relative">
                         <label for="mapping_search_combo" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
                             <svg class="w-4 h-4 mr-2 text-[#0057b7]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -267,8 +363,10 @@
                             <label for="upload_mode_direct" class="block text-sm font-semibold text-gray-700">Mode Upload Langsung</label>
                             <select id="upload_mode_direct" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 focus:ring-opacity-50">
                                 <option value="strict">Strict (replace period)</option>
+                                <option value="replace_all">Replace All (ganti semua data)</option>
                                 <option value="upsert">Upsert (gabung kunci unik)</option>
                             </select>
+                            <p id="upload_mode_direct_hint" class="text-xs text-gray-500"></p>
                             <button type="button" id="directUploadButton" class="mt-2 w-full inline-flex justify-center items-center px-5 py-3 bg-green-600 hover:bg-green-700 border border-transparent rounded-lg font-medium text-sm text-white transition-colors duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
@@ -297,6 +395,9 @@
                     <p class="text-sm text-[#d8e7f7]">{{ $recentActivities->count() }} entri terakhir</p>
                 </div>
             </div>
+        </div>
+        <div class="mt-6">
+            @include('components.upload-recent-card')
         </div>
     </div>
     
@@ -413,12 +514,60 @@
         </div>
     </div>
 
+    {{-- Modal Period Date for Strict mode --}}
+    <div id="periodDateModal" class="hidden fixed inset-0 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 w-[360px] border border-gray-200">
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-11 h-11 rounded-xl bg-[#e8f1fb] flex items-center justify-center text-[#0057b7]">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-7 4h4M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-base font-semibold text-gray-900">Pilih Period Date</p>
+                        <p class="text-xs text-gray-500">Wajib untuk upload mode strict</p>
+                    </div>
+                </div>
+                <button id="cancelPeriod" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="space-y-3">
+                <label class="block text-sm font-semibold text-gray-800">Period Date</label>
+                <div class="relative">
+                    <input type="text" id="period_date_picker" placeholder="YYYY-MM-DD" pattern="\\d{4}-\\d{2}-\\d{2}" inputmode="numeric" class="w-full rounded-xl border border-gray-300 shadow-sm focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 text-sm px-3 py-2.5 font-mono" />
+                </div>
+                <p class="text-xs text-gray-500">Gunakan format YYYY-MM-DD (contoh: 2025-01-01).</p>
+            </div>
+            <div class="flex justify-end mt-6">
+                <button id="confirmPeriod" class="px-5 py-2.5 bg-[#0057b7] text-white rounded-xl shadow hover:bg-[#004a99] focus:outline-none focus:ring-2 focus:ring-[#0057b7]/50 text-sm font-semibold">Simpan</button>
+            </div>
+        </div>
+    </div>
+
     @push('scripts')
+    @php
+        $mappingDataForJs = $mappings->map(function($m) {
+            return [
+                'id' => $m->id,
+                'label' => $m->description ?? $m->code,
+                'template' => route('export.template', $m->id),
+                'upload_mode' => $m->upload_mode,
+            ];
+        });
+    @endphp
     <script>
         let previewData = null;
         let currentSheetName = null;
+        let pendingSubmit = null;
 
         document.addEventListener('DOMContentLoaded', function() {
+            const mappingData = @json($mappingDataForJs);
+            
+            // ===== Original Mapping Combo Logic =====
             const fileInput = document.getElementById('data_file');
             const fileName = document.getElementById('file-name');
             const dropZone = document.getElementById('drop-zone');
@@ -426,10 +575,90 @@
             const mappingCombo = document.getElementById('mapping_search_combo');
             const mappingHidden = document.getElementById('mapping_id_hidden');
             const mappingDropdown = document.getElementById('mapping_dropdown');
-            const mappingData = @json($mappings->map(function($m){ return ['id'=>$m->id, 'label'=>$m->description ?? $m->code]; }));
             const createFormatUrl = '{{ route("mapping.register.form") }}';
             const directUploadButton = document.getElementById('directUploadButton');
             const uploadModeDirect = document.getElementById('upload_mode_direct');
+            const uploadModeDirectHint = document.getElementById('upload_mode_direct_hint');
+            const periodModal = document.getElementById('periodDateModal');
+            const periodInput = document.getElementById('period_date_input');
+            const periodPicker = document.getElementById('period_date_picker');
+            const confirmPeriod = document.getElementById('confirmPeriod');
+            const cancelPeriod = document.getElementById('cancelPeriod');
+            let lockedUploadMode = '';
+
+            function applyPresetUploadMode(presetMode) {
+                lockedUploadMode = presetMode || '';
+
+                if (uploadModeDirect) {
+                    if (lockedUploadMode) {
+                        uploadModeDirect.value = lockedUploadMode;
+                        uploadModeDirect.disabled = true;
+                        uploadModeDirect.classList.add('bg-gray-100', 'cursor-not-allowed');
+                        if (uploadModeDirectHint) {
+                            let label = 'Upsert (update/insert)';
+                            if (lockedUploadMode === 'strict') {
+                                label = 'Strict (replace period)';
+                            } else if (lockedUploadMode === 'replace_all') {
+                                label = 'Replace All (ganti semua data)';
+                            }
+                            uploadModeDirectHint.textContent = `Mode upload dikunci ke ${label} untuk format ini.`;
+                            uploadModeDirectHint.classList.remove('hidden');
+                        }
+                    } else {
+                        uploadModeDirect.disabled = false;
+                        uploadModeDirect.classList.remove('bg-gray-100', 'cursor-not-allowed');
+                        if (uploadModeDirectHint) {
+                            uploadModeDirectHint.textContent = 'Pilih mode upload untuk pengiriman langsung.';
+                            uploadModeDirectHint.classList.remove('hidden');
+                        }
+                    }
+                }
+            }
+
+            function openPeriodModal(callback) {
+                pendingSubmit = callback;
+                const today = new Date();
+                const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                periodPicker.value = periodPicker.value || firstOfMonth.toISOString().slice(0, 10);
+                periodModal.classList.remove('hidden');
+            }
+
+            function requirePeriodIfStrict(uploadMode, proceedFn) {
+                if (uploadMode !== 'strict') {
+                    proceedFn();
+                    return;
+                }
+                if (periodInput.value) {
+                    proceedFn();
+                    return;
+                }
+                openPeriodModal(proceedFn);
+            }
+
+            confirmPeriod.addEventListener('click', (e) => {
+                e.preventDefault();
+                const val = (periodPicker.value || '').trim();
+                const isoPattern = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+                if (!val || !isoPattern.test(val)) {
+                    alert('Gunakan format YYYY-MM-DD.');
+                    return;
+                }
+                periodInput.value = val;
+                periodModal.classList.add('hidden');
+                if (pendingSubmit) {
+                    const fn = pendingSubmit;
+                    pendingSubmit = null;
+                    fn();
+                }
+            });
+
+            cancelPeriod.addEventListener('click', (e) => {
+                e.preventDefault();
+                periodModal.classList.add('hidden');
+                pendingSubmit = null;
+            });
+
+            applyPresetUploadMode('');
             
             // Handle file input change
             fileInput.addEventListener('change', function() {
@@ -449,10 +678,20 @@
                     const q = term.toLowerCase();
                     mappingData.forEach(item => {
                         if (q === '' || item.label.toLowerCase().includes(q)) {
-                            items.push(`<button type="button" data-id="${item.id}" class="mapping-option w-full text-left px-3 py-2 hover:bg-[#f4f8fd]">${item.label}</button>`);
+                            @can('download template')
+                                const templateBtn = `<a href="${item.template}" target="_blank" class="mapping-template-link text-xs text-[#0057b7] font-semibold underline hover:text-[#004a99]">Template</a>`;
+                            @else
+                                const templateBtn = '';
+                            @endcan
+                            items.push(
+                                `<div data-id="${item.id}" class="mapping-option w-full px-3 py-2 hover:bg-[#f4f8fd] flex items-center justify-between gap-3">
+                                    <span class="text-left truncate">${item.label}</span>
+                                    ${templateBtn}
+                                </div>`
+                            );
                         }
                     });
-                    @can('register format')
+                    @can('create format')
                         items.push('<button type="button" data-id="__create__" class="mapping-option w-full text-left px-3 py-2 hover:bg-[#f4f8fd] text-[#0057b7] font-semibold">+ Tambah format baru</button>');
                     @endcan
                     mappingDropdown.innerHTML = items.join('') || '<div class="px-3 py-2 text-sm text-gray-500">Tidak ada hasil</div>';
@@ -475,17 +714,23 @@
                     showDropdown();
                 });
 
-                mappingDropdown.addEventListener('mousedown', (e) => {
+                mappingDropdown.addEventListener('click', (e) => {
+                    if (e.target.closest('.mapping-template-link')) {
+                        e.stopPropagation();
+                        return;
+                    }
                     const btn = e.target.closest('.mapping-option');
                     if (!btn) return;
                     const id = btn.dataset.id;
-                    const label = btn.textContent.trim();
+                    const label = btn.querySelector('span')?.textContent?.trim() || btn.textContent.trim();
                     if (id === '__create__') {
                         window.location.href = createFormatUrl;
                         return;
                     }
+                    const selectedMapping = mappingData.find(item => String(item.id) === String(id));
                     mappingHidden.value = id;
                     mappingCombo.value = label;
+                    applyPresetUploadMode(selectedMapping?.upload_mode || '');
                 });
 
                 mappingCombo.addEventListener('blur', hideDropdown);
@@ -712,48 +957,65 @@
 
                 // Get upload mode
                 const uploadModeInput = document.querySelector('input[name="upload_mode"]:checked');
-                if (!uploadModeInput) {
+                const uploadModeLocked = document.querySelector('input[name="upload_mode"][type="hidden"]');
+                const uploadMode = uploadModeInput?.value || uploadModeLocked?.value || lockedUploadMode;
+                if (!uploadMode) {
                     alert('Pilih mode upload');
                     return;
                 }
-                const uploadMode = uploadModeInput.value;
 
-                const formData = new FormData(form);
-                formData.append('selected_columns', JSON.stringify(selectedColumns));
-                formData.append('upload_mode', uploadMode);
-                if (currentSheetName) {
-                    formData.append('sheet_name', currentSheetName);
-                }
-                
-                confirmUpload.disabled = true;
-                confirmUpload.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Uploading...';
+                const submitUpload = () => {
+                    const formData = new FormData(form);
+                    formData.append('selected_columns', JSON.stringify(selectedColumns));
+                    formData.append('upload_mode', uploadMode);
+                    if (currentSheetName) {
+                        formData.append('sheet_name', currentSheetName);
+                    }
+                    
+                    confirmUpload.disabled = true;
+                    confirmUpload.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Uploading...';
 
-                fetch('{{ route("upload.process") }}', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert(data.message);
-                        window.location.reload();
-                    } else {
-                        alert(data.message || 'Error uploading data');
+                    const uploadUrl = uploadMode === 'strict'
+                        ? '{{ route("upload.strict") }}'
+                        : '{{ route("upload.process") }}';
+
+                    fetch(uploadUrl, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message);
+                            window.location.reload();
+                        } else {
+                            alert(data.message || 'Error uploading data');
+                            confirmUpload.disabled = false;
+                            confirmUpload.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Upload Data';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Terjadi kesalahan saat upload');
                         confirmUpload.disabled = false;
                         confirmUpload.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Upload Data';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Terjadi kesalahan saat upload');
-                    confirmUpload.disabled = false;
-                    confirmUpload.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Upload Data';
-                });
+                    });
+                };
+
+                requirePeriodIfStrict(uploadMode, submitUpload);
             });
             // ===== END: INTEGRATED CODE =====
 
-            closeModal.addEventListener('click', () => modal.classList.add('hidden'));
-            closeModalX.addEventListener('click', () => modal.classList.add('hidden'));
+            closeModal.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                modal.classList.add('hidden');
+            });
+            closeModalX.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                modal.classList.add('hidden');
+            });
 
             // Direct upload handler (skips preview)
             if (directUploadButton) {
@@ -767,38 +1029,46 @@
                         alert('Pilih file terlebih dahulu');
                         return;
                     }
-                    const uploadMode = uploadModeDirect?.value || 'strict';
+                    const uploadMode = lockedUploadMode || uploadModeDirect?.value || 'strict';
 
-                    const formData = new FormData(form);
-                    formData.append('upload_mode', uploadMode);
-                    if (currentSheetName) {
-                        formData.append('sheet_name', currentSheetName);
-                    }
+                    const submitDirect = () => {
+                        const formData = new FormData(form);
+                        formData.append('upload_mode', uploadMode);
+                        if (currentSheetName) {
+                            formData.append('sheet_name', currentSheetName);
+                        }
 
-                    directUploadButton.disabled = true;
-                    directUploadButton.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Mengunggah...';
+                        directUploadButton.disabled = true;
+                        directUploadButton.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Mengunggah...';
 
-                    fetch('{{ route("upload.process") }}', {
-                        method: 'POST',
-                        body: formData
-                    })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.success) {
-                                alert(data.message);
-                                window.location.reload();
-                            } else {
-                                alert(data.message || 'Error uploading data');
+                        const uploadUrl = uploadMode === 'strict'
+                            ? '{{ route("upload.strict") }}'
+                            : '{{ route("upload.process") }}';
+
+                        fetch(uploadUrl, {
+                            method: 'POST',
+                            body: formData
+                        })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    alert(data.message);
+                                    window.location.reload();
+                                } else {
+                                    alert(data.message || 'Error uploading data');
+                                    directUploadButton.disabled = false;
+                                    directUploadButton.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Upload Langsung';
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                alert('Terjadi kesalahan saat upload');
                                 directUploadButton.disabled = false;
                                 directUploadButton.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Upload Langsung';
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                            alert('Terjadi kesalahan saat upload');
-                            directUploadButton.disabled = false;
-                            directUploadButton.innerHTML = '<svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Upload Langsung';
-                        });
+                            });
+                    };
+
+                    requirePeriodIfStrict(uploadMode, submitDirect);
                 });
             }
         });
@@ -836,9 +1106,3 @@
     </style>
     @endpush
 </x-app-layout>
-
-
-
-
-
-

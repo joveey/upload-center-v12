@@ -22,14 +22,20 @@
                 </div>
             </div>
             <div class="flex items-center space-x-3">
-                <a href="{{ route('export.data', $mapping->id) }}" 
-                   class="inline-flex items-center px-5 py-2.5 bg-green-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-200 shadow-sm hover:shadow-md group">
+                <button type="button"
+                        onclick="openExportModal('{{ route('export.data', $mapping->id) }}', '{{ $mapping->description }}')"
+                        class="inline-flex items-center px-5 py-2.5 bg-green-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-200 shadow-sm hover:shadow-md group">
                     <svg class="w-5 h-5 mr-2 group-hover:-translate-y-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                     </svg>
                     Export Excel
-                </a>
-                @role('super-admin')
+                </button>
+                <button type="button"
+                        id="btn-open-trim"
+                        class="inline-flex items-center px-4 py-2.5 bg-indigo-600 border border-transparent rounded-lg font-bold text-sm text-white uppercase tracking-wide hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-200 shadow-sm hover:shadow-md">
+                    Trim Spasi
+                </button>
+                @role('superuser')
                     <form method="POST" action="{{ route('mapping.clear.data', $mapping->id) }}">
                         @csrf
                         @method('DELETE')
@@ -195,6 +201,93 @@
     </div>
 </x-app-layout>
 
+<!-- Trim Modal -->
+<div id="trimModal" class="fixed inset-0 z-50 hidden items-center justify-center">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <h3 class="text-xl font-bold text-gray-900">Bersihkan Spasi Kosong</h3>
+                <p class="text-sm text-gray-600 mt-1">Pilih kolom yang ingin dibersihkan dari spasi berlebih di awal/akhir teks.</p>
+            </div>
+            <button type="button" id="btn-close-trim" class="text-gray-500 hover:text-gray-800">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <form id="trimForm">
+            <input type="hidden" name="period_date" value="{{ $period_date ?? '' }}">
+            <div class="max-h-72 overflow-y-auto space-y-3 mb-6 border border-gray-200 rounded-lg p-3">
+                @foreach($columns as $col)
+                    <label class="flex items-center space-x-3">
+                        <input type="checkbox" class="trim-column rounded text-indigo-600 focus:ring-indigo-500" name="columns[]" value="{{ $col }}" checked>
+                        <span class="text-sm text-gray-800 font-medium">{{ ucwords(str_replace('_', ' ', $col)) }}</span>
+                        <span class="ml-auto text-xs text-gray-500 font-mono">{{ $col }}</span>
+                    </label>
+                @endforeach
+            </div>
+            <div class="flex items-center justify-end space-x-3">
+                <button type="button" id="btn-cancel-trim" class="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">Batal</button>
+                <button type="submit" id="btn-trim-submit" class="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg">Bersihkan</button>
+            </div>
+        </form>
+    </div>
+    <div class="absolute inset-0 hidden" id="trimModalCloser"></div>
+</div>
+
+<!-- Export Modal -->
+@php
+    $exportPeriods = collect(range(0, 11))->map(function ($i) {
+        $dt = \Carbon\Carbon::now()->subMonths($i)->startOfMonth();
+        return [
+            'value' => $dt->toDateString(),
+            'label' => $dt->translatedFormat('F Y'),
+        ];
+    });
+@endphp
+<div id="exportModal" class="fixed inset-0 z-50 hidden items-center justify-center">
+    <div class="absolute inset-0 bg-black/50"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <h3 class="text-xl font-bold text-gray-900" id="exportModalTitle">Export Data</h3>
+                @if($hasPeriodColumn)
+                    <p class="text-sm text-gray-600 mt-1">Pilih periode (tanggal selalu 1).</p>
+                @else
+                    <p class="text-sm text-gray-600 mt-1">Ekspor data tanpa filter periode.</p>
+                @endif
+            </div>
+            <button type="button" id="btn-export-close" class="text-gray-500 hover:text-gray-800">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <form id="exportForm" method="GET">
+            @if($hasPeriodColumn)
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold text-gray-800 mb-1">Periode</label>
+                    <select name="period_date" class="w-full rounded-lg border-gray-300 focus:border-[#0057b7] focus:ring focus:ring-[#0057b7]/30 shadow-sm">
+                        @foreach($exportPeriods as $opt)
+                            <option value="{{ $opt['value'] }}">{{ $opt['label'] }} ({{ $opt['value'] }})</option>
+                        @endforeach
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Opsi sudah otomatis tanggal 1 setiap bulan.</p>
+                </div>
+            @else
+                <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p class="text-sm text-blue-800">Format ini tidak memiliki kolom periode. Semua data akan diekspor.</p>
+                </div>
+            @endif
+            <div class="flex items-center justify-end space-x-3">
+                <button type="button" id="btn-export-cancel" class="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">Batal</button>
+                <button type="submit" class="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#0057b7] to-[#00a1e4] hover:from-[#004a99] hover:to-[#0091cf] rounded-lg">Download</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.btn-delete-format').forEach((btn) => {
@@ -232,6 +325,109 @@
 
                 btn.closest('form').submit();
             });
+        });
+
+        const trimModal = document.getElementById('trimModal');
+        const openTrimBtn = document.getElementById('btn-open-trim');
+        const closeTrimBtn = document.getElementById('btn-close-trim');
+        const cancelTrimBtn = document.getElementById('btn-cancel-trim');
+        const trimForm = document.getElementById('trimForm');
+        const trimSubmit = document.getElementById('btn-trim-submit');
+
+        const toggleTrimModal = (show) => {
+            if (show) {
+                trimModal.classList.remove('hidden');
+                trimModal.classList.add('flex');
+            } else {
+                trimModal.classList.add('hidden');
+                trimModal.classList.remove('flex');
+            }
+        };
+
+        openTrimBtn?.addEventListener('click', () => toggleTrimModal(true));
+        closeTrimBtn?.addEventListener('click', () => toggleTrimModal(false));
+        cancelTrimBtn?.addEventListener('click', () => toggleTrimModal(false));
+        trimModal?.addEventListener('click', (e) => {
+            if (e.target === trimModal) toggleTrimModal(false);
+        });
+
+        trimForm?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const checked = Array.from(document.querySelectorAll('.trim-column:checked')).map(cb => cb.value);
+            if (checked.length === 0) {
+                alert('Pilih minimal satu kolom untuk dibersihkan.');
+                return;
+            }
+
+            const formData = new FormData(trimForm);
+            trimSubmit.disabled = true;
+            const originalText = trimSubmit.textContent;
+            trimSubmit.textContent = 'Memproses...';
+
+            fetch("{{ route('mapping.clean.data', $mapping->id) }}", {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=\"csrf-token\"]').getAttribute('content'),
+                    'Accept': 'application/json'
+                }
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        window.location.reload();
+                    } else {
+                        alert(data.message || 'Gagal membersihkan spasi.');
+                    }
+                })
+                .catch(() => {
+                    alert('Terjadi kesalahan saat membersihkan spasi.');
+                })
+                .finally(() => {
+                    trimSubmit.disabled = false;
+                    trimSubmit.textContent = originalText;
+                    toggleTrimModal(false);
+                });
+        });
+
+        // Export modal logic
+        const exportModal = document.getElementById('exportModal');
+        const exportForm = document.getElementById('exportForm');
+        const exportTitle = document.getElementById('exportModalTitle');
+        const showExport = () => {
+            exportModal.classList.remove('hidden');
+            exportModal.classList.add('flex');
+        };
+        const closeExport = () => {
+            exportModal.classList.add('hidden');
+            exportModal.classList.remove('flex');
+        };
+
+        window.openExportModal = (url, title) => {
+            exportForm.setAttribute('action', url);
+            exportTitle.textContent = title ? `Export Data - ${title}` : 'Export Data';
+            showExport();
+        };
+
+        document.getElementById('btn-export-close')?.addEventListener('click', closeExport);
+        document.getElementById('btn-export-cancel')?.addEventListener('click', closeExport);
+        exportModal?.addEventListener('click', (e) => {
+            if (e.target === exportModal) closeExport();
+        });
+
+        // Ensure export form submits normally after validation
+        exportForm?.addEventListener('submit', (e) => {
+            @if($hasPeriodColumn)
+                const dateSelect = exportForm.querySelector('select[name="period_date"]');
+                if (!dateSelect?.value) {
+                    e.preventDefault();
+                    alert('Silakan pilih periode terlebih dahulu.');
+                    return;
+                }
+            @endif
+            closeExport();
+            // allow normal GET submit
         });
     });
 </script>

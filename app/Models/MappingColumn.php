@@ -10,6 +10,11 @@ class MappingColumn extends Model
 {
     use HasFactory;
 
+    /**
+     * Force MappingColumn to always use main/control DB (never legacy).
+     */
+    protected $connection = 'sqlsrv';
+
     protected $fillable = [
         'mapping_index_id',
         'excel_column_index',

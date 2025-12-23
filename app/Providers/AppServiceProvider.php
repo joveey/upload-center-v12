@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Database\Connectors\SqlServerConnector;
 use Illuminate\Database\SqlServerConnection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use PDO;
 
@@ -23,6 +24,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::before(function ($user, string $ability) {
+            if ($user && method_exists($user, 'hasRole') && $user->hasRole('superuser')) {
+                return true;
+            }
+            return null;
+        });
+
         DB::extend('sqlsrv', function ($config, $name) {
             $config['name'] = $name;
 

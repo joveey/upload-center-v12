@@ -16,7 +16,18 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'sqlsrv'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Control Database Connection Name
+    |--------------------------------------------------------------------------
+    |
+    | This connection is used for system tables (mapping_indices, upload_runs, etc.)
+    | to keep them separate from any temporary connection switches to legacy DBs.
+    |
+    */
+    'control_connection' => env('DATABASE_CONTROL_CONNECTION', env('DB_CONNECTION', 'sqlsrv')),
 
     /*
     |--------------------------------------------------------------------------
@@ -125,6 +136,11 @@ return [
 
 
     ],
+
+    'legacy_databases' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('LEGACY_DB_DATABASES', ''))
+    ))),
 
     /*
     |--------------------------------------------------------------------------
