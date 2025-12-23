@@ -48,7 +48,7 @@ class UploadRunController extends Controller
         $user = $request->user();
         abort_unless($user, 403);
 
-        // Hapus yang sudah selesai, dan juga processing yang sudah lama (default >15 menit)
+        // Hapus yang sudah selesai, dan juga antrean yang sudah lama tidak bergerak (default >15 menit)
         $stuckMinutes = (int) $request->query('stuck_minutes', 15);
         $cutoff = now()->subMinutes(max(1, $stuckMinutes));
 
@@ -56,7 +56,7 @@ class UploadRunController extends Controller
             ->where(function ($q) use ($cutoff) {
                 $q->whereIn('status', ['success', 'failed'])
                   ->orWhere(function ($q2) use ($cutoff) {
-                      $q2->where('status', 'processing')
+                      $q2->whereIn('status', ['processing', 'pending'])
                          ->where('updated_at', '<', $cutoff);
                   });
             })

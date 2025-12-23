@@ -10,8 +10,19 @@
             </div>
             @php
                 $serverFallback = array_values(array_filter(array_map('trim', explode(',', env('DATABASES_SERVERS', '')))));
+                if (empty($serverFallback)) {
+                    $defaultHost = config('database.connections.sqlsrv_legacy.host') ?? config('database.connections.sqlsrv.host');
+                    if (!empty($defaultHost)) {
+                        $serverFallback[] = $defaultHost;
+                    }
+                }
                 $selectedServer = request('server', '');
-                $databaseFallback = array_values(array_filter(array_map('trim', explode(',', env('LEGACY_DB_DATABASES', '')))));
+                $databaseFallback = config('database.legacy_databases', []);
+                $databaseFallback = is_array($databaseFallback) ? array_filter(array_map('trim', $databaseFallback)) : [];
+                $defaultLegacyDb = (string) (config('database.connections.sqlsrv_legacy.database') ?? '');
+                if ($defaultLegacyDb !== '' && !in_array($defaultLegacyDb, $databaseFallback, true)) {
+                    array_unshift($databaseFallback, $defaultLegacyDb);
+                }
             @endphp
             <form method="GET" action="{{ route('legacy.format.list') }}" class="w-full flex flex-wrap items-center gap-3 bg-white/90 backdrop-blur border border-gray-200 rounded-xl px-4 py-4 shadow-sm" id="existing-filter-form">
                 <div class="relative flex-1 min-w-[260px]">
@@ -33,8 +44,13 @@
                             <option value="{{ $srv }}" @selected($srv === $selectedServer)>{{ $srv }}</option>
                         @endforeach
                     </select>
+                    @php
+                        $dbOptions = array_values(array_unique(array_merge(['All'], $databaseFallback)));
+                    @endphp
                     <select id="databaseSelect" name="db" class="min-w-[180px] border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#0057b7]/40 focus:border-[#0057b7] bg-white shadow-sm py-2.5 px-3">
-                        <option value="">{{ $selectedDb ?? 'Pilih server dulu' }}</option>
+                        @foreach($dbOptions as $dbOption)
+                            <option value="{{ $dbOption }}" @selected($dbOption === ($selectedDb ?? ''))>{{ $dbOption }}</option>
+                        @endforeach
                     </select>
                 </div>
                 <button type="submit" class="inline-flex items-center px-4 py-2.5 rounded-lg bg-[#0057b7] text-white text-xs font-semibold hover:bg-[#004a99] transition shadow-sm">Terapkan</button>
@@ -154,9 +170,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadServers() {
         try {
-            const res = await fetch('/api/database-servers');
-            const data = await res.json();
-            let servers = data.servers || [];
+            const res = await fetch('/api/database-servers', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+            });
+            let servers = [];
+            if (res.ok) {
+                const data = await res.json();
+                servers = data.servers || [];
+            }
             if ((!servers || servers.length === 0) && serverFallback.length) {
                 servers = serverFallback.map(s => ({ id: s, name: s }));
             }
@@ -168,8 +193,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (s.id == selectedServer) opt.selected = true;
                 serverSelect.appendChild(opt);
             });
-            if (selectedServer) {
-                await loadDatabases(selectedServer, selectedDb);
+            // Auto-load databases when only one server is available or none selected yet
+            const autoServer = selectedServer || (servers[0]?.id ?? '');
+            if (autoServer) {
+                serverSelect.value = autoServer;
+                await loadDatabases(autoServer, selectedDb);
             }
         } catch (e) {
             console.error('Gagal load server list', e);
@@ -183,9 +211,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
-            const res = await fetch(`/api/database-servers/${encodeURIComponent(serverId)}/databases?server=${encodeURIComponent(serverId)}`);
-            const data = await res.json();
-            let dbs = data.databases || [];
+            const res = await fetch(`/api/database-servers/${encodeURIComponent(serverId)}/databases?server=${encodeURIComponent(serverId)}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+            });
+            let dbs = [];
+            if (res.ok) {
+                const data = await res.json();
+                dbs = data.databases || [];
+            }
             if ((!dbs || dbs.length === 0) && databaseFallback.length) {
                 dbs = databaseFallback.map(d => ({ id: d, name: d }));
             }
@@ -203,7 +240,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (e) {
             console.error('Gagal load database list', e);
-            databaseSelect.innerHTML = '<option value=\"\">Gagal load</option>';
+            // Fallback ke daftar dari env jika fetch gagal
+            if (databaseFallback.length) {
+                databaseSelect.innerHTML = '';
+                databaseFallback.forEach(db => {
+                    const opt = document.createElement('option');
+                    opt.value = db;
+                    opt.textContent = db;
+                    if (db == preselect) opt.selected = true;
+                    databaseSelect.appendChild(opt);
+                });
+            } else {
+                databaseSelect.innerHTML = '<option value=\"\">Gagal load</option>';
+            }
         }
     }
 
