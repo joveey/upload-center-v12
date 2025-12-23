@@ -26,30 +26,38 @@ class DatabaseServerController extends Controller
      */
     public function databases(Request $request): JsonResponse
     {
-        $server = $request->query('server');
+        $server = $request->route('server') ?? $request->query('server');
         
         if (!$server) {
             return response()->json(['error' => 'Server parameter required'], 422);
         }
 
-        // Get connection config for this server
         $connection = "databases_server_{$server}";
-        
-        // For now, use sqlsrv (local testing)
-        // Later will be dynamic based on server
-        $connection = 'sqlsrv';
+
+        // Build a temporary connection for this server using the legacy/base config.
+        if (!config("database.connections.{$connection}")) {
+            $baseConfig = config('database.connections.sqlsrv_legacy') ?? config('database.connections.sqlsrv');
+            if (is_array($baseConfig)) {
+                $baseConfig['host'] = $server;
+                config(["database.connections.{$connection}" => $baseConfig]);
+            }
+        }
+
+        // Final fallback to the default connection if we still don't have one.
+        if (!config("database.connections.{$connection}")) {
+            $connection = config('database.default');
+        }
 
         $databases = DatabaseHelper::getDatabaseList($connection);
 
-        // Merge with fallback list from env if provided
-        $fallback = array_values(array_filter(array_map('trim', explode(',', env('LEGACY_DB_DATABASES', '')))));
-        if (!empty($fallback)) {
-            $databases = collect($databases)
-                ->merge($fallback)
-                ->unique()
-                ->values()
-                ->all();
-        }
+        $fallback = $this->configuredDatabaseList();
+
+        $databases = collect($databases ?? [])
+            ->merge($fallback)
+            ->filter(fn($db) => is_string($db) && $db !== '')
+            ->unique()
+            ->values()
+            ->all();
 
         // Add "All" option at the top
         array_unshift($databases, 'All');
@@ -84,5 +92,21 @@ class DatabaseServerController extends Controller
             'success' => $success,
             'message' => $success ? 'Connection successful' : 'Connection failed',
         ]);
+    }
+
+    /**
+     * Fallback database list from configuration (LEGACY_DB_DATABASES + default legacy DB)
+     */
+    private function configuredDatabaseList(): array
+    {
+        $options = config('database.legacy_databases', []);
+        $options = is_array($options) ? array_filter(array_map('trim', $options)) : [];
+
+        $defaultLegacyDb = (string) (config('database.connections.sqlsrv_legacy.database') ?? '');
+        if ($defaultLegacyDb !== '' && ! in_array($defaultLegacyDb, $options, true)) {
+            array_unshift($options, $defaultLegacyDb);
+        }
+
+        return array_values(array_unique($options));
     }
 }
