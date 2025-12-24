@@ -2314,9 +2314,10 @@ class MappingController extends Controller
             $payload = [
                 $meta['status_column'] => $statusMode === 'batch' ? 'inactive' : 0,
             ];
-            // period_date hanya diisi jika disediakan (hindari konflik untuk replace_all)
-            if ($meta['period_column'] && $periodDate) {
-                $payload[$meta['period_column']] = $periodDate;
+            // period_date sebagai cap waktu: pakai nilai yang dikirim, jika tidak ada pakai sekarang (date-time)
+            if ($meta['period_column']) {
+                $effectivePeriod = $periodDate ?? now()->format('Y-m-d H:i:s');
+                $payload[$meta['period_column']] = $effectivePeriod;
             }
 
             // Hard safety: never send identity or timestamp columns

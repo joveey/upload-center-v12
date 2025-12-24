@@ -302,9 +302,6 @@ class UploadIndexService
             $activePayload = [
                 $meta['status_column'] => $activeValue,
             ];
-            if ($meta['period_column']) {
-                $activePayload[$meta['period_column']] = null;
-            }
             if ($meta['has_updated_at']) {
                 $activePayload['updated_at'] = $now;
             }
@@ -314,9 +311,6 @@ class UploadIndexService
 
             $existing = $conn->table($meta['table'])
                 ->where($meta['index_column'], $newUploadIndex);
-            if ($meta['period_column']) {
-                $existing->whereNull($meta['period_column']);
-            }
 
             $updated = $existing->update($activePayload);
             if ($updated === 0) {
