@@ -2607,6 +2607,57 @@ class MappingController extends Controller
             'period_date.date_format' => 'Period harus menggunakan format YYYY-MM-DD.',
         ]);
 
+        $mapping = MappingIndex::with('columns')->find($validated['mapping_id']);
+        if (! $mapping) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format tidak ditemukan.',
+            ], 404);
+        }
+
+        $connection = $mapping->target_connection
+            ?? $mapping->connection
+            ?? config('database.default');
+        $this->ensureLegacyConnectionConfigured($connection);
+
+        $mainTable = $mapping->table_name;
+        if (! Schema::connection($connection)->hasTable($mainTable)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Tabel '{$mainTable}' tidak ditemukan.",
+            ], 404);
+        }
+
+        $hasPeriodDate = Schema::connection($connection)->hasColumn($mainTable, 'period_date');
+
+        // Hitung kolom unik yang dipilih (jika ada filter kolom)
+        $mappingRules = $mapping->columns;
+        if (!empty($validated['selected_columns'])) {
+            $selectedColumns = json_decode($validated['selected_columns'], true);
+            if (is_array($selectedColumns)) {
+                $selectedValues = array_filter($selectedColumns);
+                $mappingRules = $mappingRules->filter(function ($rule) use ($selectedColumns, $selectedValues) {
+                    $excelKeyMatch = isset($selectedColumns[$rule->excel_column_index]) && !empty($selectedColumns[$rule->excel_column_index]);
+                    $valueMatch = in_array($rule->table_column_name, $selectedValues, true);
+                    return $excelKeyMatch || $valueMatch;
+                });
+            }
+        }
+        $uniqueKeyColumns = $mappingRules->where('is_unique_key', true)->pluck('table_column_name')->toArray();
+
+        $effectiveMode = $validated['upload_mode'];
+        if ($effectiveMode === 'upsert' && empty($uniqueKeyColumns) && $hasPeriodDate) {
+            if (empty($validated['period_date'])) {
+                return response()->json([
+                    'success' => false,
+                    'require_period' => true,
+                    'forced_mode' => 'strict',
+                    'message' => 'Mode upsert butuh kunci unik. Karena tabel ada period_date, isi period dan jalankan seperti strict (drop data di period itu).',
+                ], 422);
+            }
+            $effectiveMode = 'strict';
+        }
+
         $uploadedFile = $request->file('data_file');
         Storage::disk('local')->makeDirectory('tmp');
         $storedName = 'upload_' . Str::random(16) . '.xlsx';
@@ -2625,7 +2676,7 @@ class MappingController extends Controller
             'file_name' => $uploadedFile->getClientOriginalName(),
             'stored_xlsx_path' => $storedXlsxPath,
             'sheet_name' => $validated['sheet_name'] ?? null,
-            'upload_mode' => $validated['upload_mode'],
+            'upload_mode' => $effectiveMode,
             'period_date' => $validated['period_date'] ?? null,
             'selected_columns' => $validated['selected_columns'] ?? null,
             'status' => 'pending',
@@ -2828,15 +2879,33 @@ class MappingController extends Controller
             Log::info('Unique key columns:', $uniqueKeyColumns);
 
             // If upsert mode but no unique keys, choose fallback:
-            // - For legacy: append (no delete, just insert)
-            // - For others: append as well (avoid accidental replace)
+            // - If table has period_date, force strict and require period
+            // - Otherwise append to avoid unintended replace
             if ($uploadMode === 'upsert' && empty($uniqueKeyColumns)) {
-                Log::warning('Upsert mode selected but no unique keys defined. Switching to append mode to avoid data replacement.', [
-                    'mapping_id' => $mapping->id,
-                    'table' => $mainTableName,
-                    'connection' => $connection,
-                ]);
-                $uploadMode = 'append';
+                if ($hasPeriodDate) {
+                    if (empty($validated['period_date'])) {
+                        return response()->json([
+                            'success' => false,
+                            'require_period' => true,
+                            'forced_mode' => 'strict',
+                            'message' => 'Mode upsert butuh kunci unik. Karena tabel ada period_date, isi period dan jalankan seperti strict (drop data di period itu).',
+                        ], 422);
+                    }
+                    Log::warning('Upsert mode selected with period_date but no unique keys. Forcing strict with period.', [
+                        'mapping_id' => $mapping->id,
+                        'table' => $mainTableName,
+                        'connection' => $connection,
+                    ]);
+                    $uploadMode = 'strict';
+                    $runPeriodDate = $validated['period_date'];
+                } else {
+                    Log::warning('Upsert mode selected but no unique keys defined. Switching to append mode to avoid data replacement.', [
+                        'mapping_id' => $mapping->id,
+                        'table' => $mainTableName,
+                        'connection' => $connection,
+                    ]);
+                    $uploadMode = 'append';
+                }
             }
             $useUploadIndex = in_array($uploadMode, ['strict', 'replace_all'], true);
             $isReplaceAll = $uploadMode === 'replace_all';
