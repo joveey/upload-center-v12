@@ -1976,7 +1976,6 @@ class MappingController extends Controller
                 $table->bigIncrements('index_id');
                 $table->date('period_date')->nullable()->index();
                 $table->string('status_batch', 20)->default('inactive')->index();
-                $table->timestamps();
             });
             Log::info("Legacy index table created", [
                 'table' => $indexTable,
@@ -2264,7 +2263,7 @@ class MappingController extends Controller
     }
 
     /**
-     * Create a legacy *_INDEX row in PROCESSING state and return the new index_id.
+     * Create a legacy *_INDEX row in inactive state and return the new index_id.
      * Smart allocation: continues from existing max index.
      */
     private function createLegacyIndexBatch(string $baseTable, string $connection, ?string $periodDate = null, bool $createIfMissing = false): ?int
@@ -2311,52 +2310,48 @@ class MappingController extends Controller
                 $maxCeiling = max($maxCeiling ?? 0, (int) ($controlMax ?? 0));
             }
             
-            $now = now();
             $statusMode = $meta['status_mode'] ?? 'batch';
             $payload = [
-                $meta['status_column'] => $statusMode === 'batch' ? 'processing' : 0,
+                $meta['status_column'] => $statusMode === 'batch' ? 'inactive' : 0,
             ];
-            if ($meta['period_column']) {
+            // period_date hanya diisi jika disediakan (hindari konflik untuk replace_all)
+            if ($meta['period_column'] && $periodDate) {
                 $payload[$meta['period_column']] = $periodDate;
             }
-            if ($meta['has_updated_at']) {
-                $payload['updated_at'] = $now;
-            }
-            if ($meta['has_created_at']) {
-                $payload['created_at'] = $now;
-            }
 
-            // Explicitly set next index to continue from ceiling
-            $nextIndex = null;
-            if ($maxCeiling && $maxCeiling > 0) {
-                $nextIndex = $maxCeiling + 1;
-                $payload[$meta['index_column']] = $nextIndex;
-            }
-            
+            // Hard safety: never send identity or timestamp columns
+            unset(
+                $payload[$meta['index_column']],
+                $payload['index_id'],
+                $payload['created_at'],
+                $payload['updated_at']
+            );
+
             Log::info('Inserting into legacy index table', [
                 'table' => $meta['table'],
                 'index_column' => $meta['index_column'],
                 'payload' => $payload,
                 'max_ceiling' => $maxCeiling,
-                'next_index' => $nextIndex,
             ]);
-            
-            // When explicitly setting the index column value, we need to insert then query back the ID
-            if ($nextIndex !== null) {
-                // Insert with explicit value
-                $conn->table($meta['table'])->insert($payload);
-                // Query back to get the inserted row's ID
-                $query = $conn->table($meta['table'])
-                    ->where($meta['index_column'], $nextIndex);
-                if ($meta['period_column'] && $periodDate) {
-                    $query->where($meta['period_column'], $periodDate);
-                }
-                $newId = $query->value('index_id') ?? $nextIndex;
-            } else {
-                // Let the database auto-generate the index_id
+
+            // Let the database auto-generate the index_id (avoid explicit identity insert)
+            try {
                 $newId = $conn->table($meta['table'])->insertGetId($payload);
+            } catch (\Throwable $e) {
+                Log::warning('Insert into legacy index table failed, attempting fallback to existing max index', [
+                    'table' => $meta['table'],
+                    'error' => $e->getMessage(),
+                ]);
+                $fallback = $conn->table($meta['table'])
+                    ->when($meta['period_column'] && $periodDate, fn($q) => $q->whereDate($meta['period_column'], $periodDate))
+                    ->max($meta['index_column']);
+                if (is_numeric($fallback)) {
+                    $newId = (int) $fallback;
+                } else {
+                    throw $e;
+                }
             }
-            
+
             Log::info('Legacy index batch created (smart allocation)', [
                 'base_table' => $baseTable,
                 'new_index_id' => $newId,
@@ -2406,37 +2401,22 @@ class MappingController extends Controller
             $inactiveValue = $statusMode === 'batch' ? 'inactive' : 0;
             $activeValue = $statusMode === 'batch' ? 'active' : 1;
 
-            // Deactivate previous entries
+            // Deactivate ALL previous entries (no period filter) to ensure single active index
             $inactivePayload = [$meta['status_column'] => $inactiveValue];
-            if ($meta['has_updated_at']) {
-                $inactivePayload['updated_at'] = $now;
-            }
-            $deactivateQuery = $conn->table($meta['table']);
-            if ($meta['period_column'] && $periodDate) {
-                $deactivateQuery->whereDate($meta['period_column'], $periodDate);
-            }
-            $deactivateQuery->update($inactivePayload);
+            $conn->table($meta['table'])->update($inactivePayload);
 
             // Upsert the new active index
             $activePayload = [
                 $meta['index_column'] => $uploadIndex,
                 $meta['status_column'] => $activeValue,
             ];
+            // Keep period_date only if provided; otherwise leave existing/null
             if ($meta['period_column'] && $periodDate) {
                 $activePayload[$meta['period_column']] = $periodDate;
-            }
-            if ($meta['has_updated_at']) {
-                $activePayload['updated_at'] = $now;
-            }
-            if ($meta['has_created_at']) {
-                $activePayload['created_at'] = $now;
             }
 
             $existing = $conn->table($meta['table'])
                 ->where($meta['index_column'], $uploadIndex);
-            if ($meta['period_column'] && $periodDate) {
-                $existing->whereDate($meta['period_column'], $periodDate);
-            }
 
             if ($existing->exists()) {
                 $existing->update($activePayload);
@@ -2991,12 +2971,27 @@ class MappingController extends Controller
                     : null;
 
                 if ($useLegacyIndexId) {
-                    $legacyIndexId = $this->createLegacyIndexBatch($mainTableName, $connection, null, true);
-                    if (! $legacyIndexId) {
-                        throw new \RuntimeException('Gagal membuat index batch legacy.');
+                    try {
+                        $legacyIndexId = $this->createLegacyIndexBatch($mainTableName, $connection, null, true);
+                        if ($legacyIndexId) {
+                            $uploadRun = $uploadIndexService->beginRunWithIndex($mapping->id, $legacyIndexId, Auth::id(), $runPeriodDate);
+                            $uploadIndexValue = (int) $legacyIndexId;
+                        } else {
+                            throw new \RuntimeException('Legacy index id is null');
+                        }
+                    } catch (\Throwable $e) {
+                        Log::warning('Gagal membuat index batch legacy, fallback ke upload_index biasa (no fail)', [
+                            'table' => $mainTableName,
+                            'connection' => $connection,
+                            'error' => $e->getMessage(),
+                        ]);
+                        $useLegacyIndexId = false;
+                        $useInlineIndexTable = false;
+                        $versionColumn = 'upload_index';
+                        $this->ensureUploadIndexColumn($mainTableName, $connection, $versionColumn);
+                        $uploadRun = $uploadIndexService->beginRun($mapping->id, Auth::id(), $runPeriodDate, $existingIndexCeiling);
+                        $uploadIndexValue = (int) $uploadRun->upload_index;
                     }
-                    $uploadRun = $uploadIndexService->beginRunWithIndex($mapping->id, $legacyIndexId, Auth::id(), $runPeriodDate);
-                    $uploadIndexValue = (int) $legacyIndexId;
                 } else {
                     $uploadRun = $uploadIndexService->beginRun($mapping->id, Auth::id(), $runPeriodDate, $existingIndexCeiling);
                     $uploadIndexValue = (int) $uploadRun->upload_index;
@@ -3143,10 +3138,10 @@ class MappingController extends Controller
             $maxParams = $driver === 'sqlsrv' ? 2000 : 10000;
             $baseChunk = max(1, intdiv($maxParams, max(1, $columnsPerRow)));
 
-            // SQL Server: capped to stay under 1000 row-value limit per INSERT VALUES
+            // SQL Server: keep total parameters under 2100 and rows under ~900
             // Others: still allow larger batches
             if ($driver === 'sqlsrv') {
-                $chunkSize = 900;
+                $chunkSize = max(1, min(900, $baseChunk));
             } else {
                 $chunkSize = min(2000, max(500, $baseChunk));
             }
@@ -3976,10 +3971,51 @@ class MappingController extends Controller
             // 7. ACTIVATE (Zero Downtime Switch)
             $uploadIndexService->activateRun($run);
 
-            // Cleanup old versions later
-            if ($useInlineIndexTable && $legacyIndexMeta) {
-                $this->syncLegacyIndexTable($baseTableName, $connection, $uploadIndex, $periodDate);
+            // Pastikan *_INDEX mencatat index_id aktif (jika ada index_id/legacy index table)
+            $legacyIndexMeta = $legacyIndexMeta ?? $this->detectLegacyIndexTable($baseTableName, $connection);
+            if (! $legacyIndexMeta && Schema::connection($connection)->hasColumn($baseTableName, 'index_id')) {
+                $legacyIndexMeta = $this->ensureLegacyIndexTable($baseTableName, $connection);
             }
+            if ($legacyIndexMeta) {
+                $conn = DB::connection($connection);
+                $indexValue = $useLegacyIndexId ? $uploadIndex : $conn->table($legacyIndexMeta['table'])->max($legacyIndexMeta['index_column']);
+                if (is_numeric($indexValue) && $indexValue > 0) {
+                    $this->syncLegacyIndexTable($baseTableName, $connection, (int) $indexValue, $periodDate);
+                }
+            }
+
+            // Hard safety: if index table exists, force latest index_id to active (status_batch) without timestamps
+            try {
+                $indexTableName = $baseTableName . '_INDEX';
+                if (Schema::connection($connection)->hasTable($indexTableName) && Schema::connection($connection)->hasColumn($indexTableName, 'status_batch')) {
+                    $conn = DB::connection($connection);
+                    $latestId = $conn->table($indexTableName)->max('index_id');
+                    if ($latestId) {
+                        // Set semua jadi inactive lalu jadikan latest active (opsional filter period)
+                        $inactiveQuery = $conn->table($indexTableName);
+                        if (Schema::connection($connection)->hasColumn($indexTableName, 'period_date') && $periodDate) {
+                            $inactiveQuery->whereDate('period_date', $periodDate);
+                        }
+                        $inactiveQuery->update(['status_batch' => 'inactive']);
+
+                        $activeQuery = $conn->table($indexTableName)->where('index_id', $latestId);
+                        if (Schema::connection($connection)->hasColumn($indexTableName, 'period_date') && $periodDate) {
+                            $activeQuery->whereDate('period_date', $periodDate);
+                        }
+                        $activeQuery->update([
+                            'status_batch' => 'active',
+                            // Tidak menyentuh created_at/updated_at
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Hard safety activation for legacy index failed', [
+                    'table' => $baseTableName . '_INDEX',
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            // Cleanup old versions later
             if (! $useInlineIndexTable) {
                 CleanupStrictVersions::dispatch($mapping->id, $periodDate, $baseTableName, $connection)
                     ->delay(now()->addMinutes(5));
