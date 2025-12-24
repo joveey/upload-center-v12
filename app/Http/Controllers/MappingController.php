@@ -2646,16 +2646,32 @@ class MappingController extends Controller
         $uniqueKeyColumns = $mappingRules->where('is_unique_key', true)->pluck('table_column_name')->toArray();
 
         $effectiveMode = $validated['upload_mode'];
-        if ($effectiveMode === 'upsert' && empty($uniqueKeyColumns) && $hasPeriodDate) {
-            if (empty($validated['period_date'])) {
+        $hasIndexId = Schema::connection($connection)->hasColumn($mainTable, 'index_id');
+        if ($effectiveMode === 'upsert' && empty($uniqueKeyColumns)) {
+            $forceMode = $request->input('force_mode');
+            $suggestedMode = ($hasPeriodDate || ! $hasIndexId) ? 'strict' : 'replace_all';
+
+            // If client already confirms with force_mode, apply it
+            if ($forceMode === $suggestedMode) {
+                if ($suggestedMode === 'strict' && empty($validated['period_date'])) {
+                    return response()->json([
+                        'success' => false,
+                        'require_period' => true,
+                        'forced_mode' => 'strict',
+                        'message' => 'Mode upsert tanpa unique key. Masukkan period untuk menjalankan sebagai strict (drop data pada period tersebut).',
+                    ], 422);
+                }
+                $effectiveMode = $suggestedMode;
+            } else {
                 return response()->json([
                     'success' => false,
-                    'require_period' => true,
-                    'forced_mode' => 'strict',
-                    'message' => 'Mode upsert butuh kunci unik. Karena tabel ada period_date, isi period dan jalankan seperti strict (drop data di period itu).',
+                    'require_mode_confirmation' => true,
+                    'suggested_mode' => $suggestedMode,
+                    'message' => $suggestedMode === 'strict'
+                        ? 'Tidak ada unique key/index_id. Disarankan jalankan sebagai STRICT (per period). Lanjutkan?'
+                        : 'Tidak ada unique key. Disarankan jalankan sebagai REPLACE ALL (hapus & ganti). Lanjutkan?',
                 ], 422);
             }
-            $effectiveMode = 'strict';
         }
 
         $uploadedFile = $request->file('data_file');
@@ -2878,10 +2894,11 @@ class MappingController extends Controller
             
             Log::info('Unique key columns:', $uniqueKeyColumns);
 
-            // If upsert mode but no unique keys, choose fallback:
-            // - If table has period_date, force strict and require period
-            // - Otherwise append to avoid unintended replace
+            // If upsert mode but no unique keys, suggest fallback and require confirmation:
+            // - If table has period_date OR no index_id column: suggest strict
+            // - Otherwise suggest replace_all
             if ($uploadMode === 'upsert' && empty($uniqueKeyColumns)) {
+                $hasIndexId = Schema::connection($connection)->hasColumn($mainTableName, 'index_id');
                 if ($hasPeriodDate) {
                     if (empty($validated['period_date'])) {
                         return response()->json([
@@ -2899,12 +2916,21 @@ class MappingController extends Controller
                     $uploadMode = 'strict';
                     $runPeriodDate = $validated['period_date'];
                 } else {
-                    Log::warning('Upsert mode selected but no unique keys defined. Switching to append mode to avoid data replacement.', [
-                        'mapping_id' => $mapping->id,
-                        'table' => $mainTableName,
-                        'connection' => $connection,
-                    ]);
-                    $uploadMode = 'append';
+                    $suggested = $hasIndexId ? 'replace_all' : 'strict';
+                    // If client confirmed via force_mode, apply; otherwise stop with instruction
+                    $forceMode = $request->input('force_mode');
+                    if ($forceMode === $suggested) {
+                        $uploadMode = $suggested;
+                    } else {
+                        return response()->json([
+                            'success' => false,
+                            'require_mode_confirmation' => true,
+                            'suggested_mode' => $suggested,
+                            'message' => $suggested === 'strict'
+                                ? 'Tidak ada unique key/index_id. Disarankan STRICT (drop per period/index). Masukkan period jika diminta.'
+                                : 'Tidak ada unique key. Disarankan REPLACE ALL (hapus & ganti). Lanjutkan?',
+                        ], 422);
+                    }
                 }
             }
             $useUploadIndex = in_array($uploadMode, ['strict', 'replace_all'], true);

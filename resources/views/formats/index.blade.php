@@ -17,7 +17,7 @@
                 </div>
             </div>
             <div class="flex items-center space-x-3">
-                <form method="GET" action="{{ route('formats.index') }}" class="relative">
+                <form method="GET" action="{{ route('formats.index') }}" class="relative" id="formatSearchForm">
                     <input
                         type="text"
                         name="q"
@@ -373,6 +373,28 @@
     });
 
     // Handle Upload Confirmation (Dynamic Routing)
+    // Live-search submit for Format list
+    (function() {
+        const form = document.getElementById('formatSearchForm');
+        const input = form?.querySelector('input[name="q"]');
+        if (!form || !input) return;
+
+        let timer = null;
+        const submitNow = () => form.submit();
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitNow();
+            }
+        });
+
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(submitNow, 300);
+        });
+    })();
+
     document.body.addEventListener('click', function(e) {
         if (e.target && (e.target.id === 'btn-confirm-upload' || e.target.closest('#btn-confirm-upload'))) {
             const btn = e.target.id === 'btn-confirm-upload' ? e.target : e.target.closest('#btn-confirm-upload');

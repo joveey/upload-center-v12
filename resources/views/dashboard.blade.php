@@ -584,8 +584,6 @@
             const periodPicker = document.getElementById('period_date_picker');
             const confirmPeriod = document.getElementById('confirmPeriod');
             const cancelPeriod = document.getElementById('cancelPeriod');
-            const confirmUploadDefault = confirmUpload?.innerHTML;
-            const directUploadDefault = directUploadButton?.innerHTML;
             let lockedUploadMode = '';
 
             function applyPresetUploadMode(presetMode) {
@@ -967,10 +965,12 @@
                 }
 
                 const submitUpload = (forcedMode = '') => {
-                    const effectiveMode = forcedMode || uploadMode;
                     const formData = new FormData(form);
                     formData.append('selected_columns', JSON.stringify(selectedColumns));
-                    formData.append('upload_mode', effectiveMode);
+                    formData.append('upload_mode', forcedMode || uploadMode);
+                    if (forcedMode) {
+                        formData.append('force_mode', forcedMode);
+                    }
                     if (currentSheetName) {
                         formData.append('sheet_name', currentSheetName);
                     }
@@ -978,7 +978,7 @@
                     confirmUpload.disabled = true;
                     confirmUpload.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Uploading...';
 
-                    const uploadUrl = effectiveMode === 'strict'
+                    const uploadUrl = (forcedMode || uploadMode) === 'strict'
                         ? '{{ route("upload.strict") }}'
                         : '{{ route("upload.process") }}';
 
@@ -992,11 +992,14 @@
                             alert(data.message);
                             window.location.reload();
                         } else {
-                            if (data.require_period && data.forced_mode === 'strict') {
-                                confirmUpload.disabled = false;
-                                confirmUpload.innerHTML = confirmUploadDefault;
-                                periodInput.value = '';
-                                requirePeriodIfStrict('strict', () => submitUpload('strict'));
+                            if (data.require_mode_confirmation && data.suggested_mode) {
+                                const proceed = confirm(data.message || 'Mode disarankan berbeda. Lanjutkan?');
+                                if (proceed) {
+                                    submitUpload(data.suggested_mode);
+                                } else {
+                                    confirmUpload.disabled = false;
+                                    confirmUpload.innerHTML = confirmUploadDefault;
+                                }
                                 return;
                             }
                             alert(data.message || 'Error uploading data');
@@ -1042,9 +1045,11 @@
                     const uploadMode = lockedUploadMode || uploadModeDirect?.value || 'strict';
 
                     const submitDirect = (forcedMode = '') => {
-                        const effectiveMode = forcedMode || uploadMode;
                         const formData = new FormData(form);
-                        formData.append('upload_mode', effectiveMode);
+                        formData.append('upload_mode', forcedMode || uploadMode);
+                        if (forcedMode) {
+                            formData.append('force_mode', forcedMode);
+                        }
                         if (currentSheetName) {
                             formData.append('sheet_name', currentSheetName);
                         }
@@ -1052,7 +1057,7 @@
                         directUploadButton.disabled = true;
                         directUploadButton.innerHTML = '<svg class="animate-spin h-5 w-5 mr-2 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Mengunggah...';
 
-                        const uploadUrl = effectiveMode === 'strict'
+                        const uploadUrl = (forcedMode || uploadMode) === 'strict'
                             ? '{{ route("upload.strict") }}'
                             : '{{ route("upload.process") }}';
 
@@ -1066,11 +1071,14 @@
                                     alert(data.message);
                                     window.location.reload();
                                 } else {
-                                    if (data.require_period && data.forced_mode === 'strict') {
-                                        directUploadButton.disabled = false;
-                                        directUploadButton.innerHTML = directUploadDefault;
-                                        periodInput.value = '';
-                                        requirePeriodIfStrict('strict', () => submitDirect('strict'));
+                                    if (data.require_mode_confirmation && data.suggested_mode) {
+                                        const proceed = confirm(data.message || 'Mode disarankan berbeda. Lanjutkan?');
+                                        if (proceed) {
+                                            submitDirect(data.suggested_mode);
+                                        } else {
+                                            directUploadButton.disabled = false;
+                                            directUploadButton.innerHTML = directUploadDefault;
+                                        }
                                         return;
                                     }
                                     alert(data.message || 'Error uploading data');
@@ -1086,7 +1094,7 @@
                             });
                     };
 
-                    requirePeriodIfStrict(uploadMode, () => submitDirect());
+                    requirePeriodIfStrict(uploadMode, submitDirect);
                 });
             }
         });
